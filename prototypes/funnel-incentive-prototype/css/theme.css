@@ -1,0 +1,62 @@
+:root {
+    /* Extracted Colors */
+    --color-1: #ffffff;
+    --color-2: #8a8a8a;
+    --color-3: #5f6368;
+    --color-4: #000000;
+    --color-5: #212121;
+    --color-6: #1a73e8;
+    --color-7: #dadce0;
+    --color-8: #f1f3f4;
+    --color-9: #e8eaed;
+    --color-10: #d93025;
+    --color-11: #188038;
+    --color-12: #fbbc04;
+    --color-13: #fff9e6;
+    --color-14: #e6f4ea;
+    --color-15: #fce8e6;
+    --color-16: #e8f0fe;
+    --color-17: #80868b;
+    --color-18: #5f6368;
+    --color-19: #202124;
+    --color-20: #ffffff;
+    --color-21: #bdc1c6;
+    --color-22: #006064;
+    --color-23: #80dde9;
+    --color-24: #e8ecf1;
+    --color-25: #fafafa;
+    --color-26: #1b1b1b;
+    --color-27: #9ab3eb;
+    --color-28: #183263;
+    --color-29: #acc2e9;
+    --color-30: #eef2fc;
+    --color-31: #e10a0a;
+    --color-32: #003c80;
+    --color-33: #021f5e;
+    --color-34: #f99c1c;
+    --color-35: #808183;
+    --color-36: #93969a;
+    --color-37: #68003d;
+    --color-38: #f7faff;
+    --color-39: #3a81f4;
+    --color-40: #285aaa;
+    --color-41: #d3dff6;
+    --color-42: #e0e0e0;
+    --color-43: #ed1c24;
+    --color-44: #757575;
+
+    /* Semantic Mappings */
+    --primary-color: var(--color-39);
+    /* Likely the primary blue */
+    --background-color: var(--color-38);
+    /* Light blue-ish white */
+    --text-primary: var(--color-26);
+    --text-secondary: var(--color-17);
+    --border-color: var(--color-7);
+    --success-color: var(--color-11);
+    --error-color: var(--color-10);
+
+    /* Fonts */
+    --font-family-primary: 'Europa', 'Inter', sans-serif;
+    --font-family-secondary: 'Helvetica', 'Arial', sans-serif;
+}

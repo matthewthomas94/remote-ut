@@ -1,0 +1,72 @@
+/* Transition Animations */
+.fade-out {
+    opacity: 0;
+    transition: opacity 0.5s ease-in-out;
+}
+
+.fade-in {
+    animation: fadeIn 0.5s ease-in-out forwards;
+}
+
+@keyframes fadeIn {
+    from {
+        opacity: 0;
+    }
+
+    to {
+        opacity: 1;
+    }
+}
+
+.slide-up {
+    animation: slideUp 0.5s ease-in-out forwards;
+}
+
+@keyframes slideUp {
+    from {
+        transform: translateY(100%);
+    }
+
+    to {
+        transform: translateY(0);
+    }
+}
+
+/* Skeleton Loading */
+@keyframes shimmer {
+    0% {
+        background-position: -200% 0;
+    }
+
+    100% {
+        background-position: 200% 0;
+    }
+}
+
+.skeleton-text {
+    color: transparent !important;
+    background: linear-gradient(90deg, #f0f0f0 25%, #e0e0e0 50%, #f0f0f0 75%);
+    background-size: 200% 100%;
+    animation: shimmer 1.5s infinite;
+    border-radius: 4px;
+    display: inline-block;
+    width: 80%;
+    /* Or specific width based on context */
+    height: 1em;
+    transition: width 0.5s ease-in-out;
+}
+
+.section-title.skeleton-text {
+    width: 60%;
+    margin-bottom: 8px;
+}
+
+.section-subtitle.skeleton-text {
+    width: 40%;
+}
+
+/* Card Resizing */
+.main-card {
+    transition: min-height 0.3s cubic-bezier(0.4, 0.0, 0.2, 1);
+    /* Ease-in-out */
+}

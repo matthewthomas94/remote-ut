@@ -1,0 +1,496 @@
+<!DOCTYPE html>
+<html lang="en">
+
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Header Alert - Desktop</title>
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+
+        body {
+            font-family: 'Europa', -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            min-height: 100vh;
+            background: #ffffff;
+            padding: 20px;
+        }
+
+        /* Desktop Container */
+        .header-alert-container {
+            position: relative;
+            display: inline-flex;
+            align-items: center;
+            padding: 12px 24px;
+            background: #F5FCFD;
+            border: 1px solid #80DDE9;
+            border-radius: 20px;
+            box-shadow: 0 0 15px rgba(128, 221, 233, 0.4);
+            overflow: hidden;
+            height: 64px;
+            /* Slightly taller for desktop to breathe */
+            min-width: 420px;
+            /* Wider to fit timeline */
+            justify-content: center;
+        }
+
+        /* Particle Canvas - Confined to the pill */
+        .particle-canvas {
+            position: absolute;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 100%;
+            pointer-events: none;
+            z-index: 1;
+        }
+
+        canvas {
+            width: 100%;
+            height: 100%;
+            border-radius: 100px;
+        }
+
+        .content-area {
+            position: relative;
+            z-index: 5;
+            display: flex;
+            align-items: center;
+            gap: 16px;
+            /* Increased gap for desktop */
+            width: 100%;
+            justify-content: space-between;
+        }
+
+        .timeline-wrapper {
+            display: flex;
+            align-items: center;
+            gap: 12px;
+            flex: 1;
+        }
+
+        .icon-wrapper {
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            width: 24px;
+            height: 24px;
+            color: #00ACC1;
+        }
+
+        .icon-wrapper svg {
+            width: 100%;
+            height: 100%;
+            fill: currentColor;
+        }
+
+        .timeline-bar {
+            height: 8px;
+            flex: 1;
+            min-width: 40px;
+            background-color: #B2EBF2;
+            /* Light cyan bar */
+            border-radius: 10px;
+        }
+
+        .lock-icon-wrapper {
+            /* Special wrapper for lock to match existing style if needed, 
+                but using standard wrapper for consistency in this timeline */
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            width: 24px;
+            height: 24px;
+        }
+
+        .lock-icon-wrapper svg {
+            width: 20px;
+            height: 20px;
+            fill: #00ACC1;
+        }
+
+
+        .points-wrapper {
+            font-size: 20px;
+            /* Larger font for desktop */
+            font-weight: 700;
+            color: #006064;
+            display: flex;
+            align-items: center;
+            gap: 4px;
+            margin-left: 12px;
+            /* Extra separation from the timeline */
+        }
+
+        .unit {
+            font-size: 16px;
+            font-weight: 500;
+        }
+
+        /* Bobbing Animation for Text */
+        #pointsValueWrap {
+            display: inline-flex;
+            align-items: center;
+            gap: 4px;
+        }
+
+        #pointsValueWrap.bobbing {
+            animation: bob 4000ms ease-in-out infinite;
+        }
+
+        @keyframes bob {
+            0% {
+                transform: translateY(0px);
+            }
+
+            50% {
+                transform: translateY(-2px);
+                /* Slightly more movement */
+            }
+
+            100% {
+                transform: translateY(0px);
+            }
+        }
+    </style>
+</head>
+
+<body>
+    <div class="header-alert-container">
+        <div class="particle-canvas">
+            <canvas id="particleCanvas"></canvas>
+        </div>
+
+        <div class="content-area">
+            <!-- Timeline Sequence -->
+
+            <!-- 1. Person Pencil -->
+            <div class="icon-wrapper">
+                <svg xmlns="http://www.w3.org/2000/svg" width="18" height="17" viewBox="0 0 18 17" fill="none">
+                    <path
+                        d="M17.7 9.35L16.7 10.35L14.65 8.3L15.65 7.3C15.7528 7.19923 15.891 7.14278 16.035 7.14278C16.179 7.14278 16.3172 7.19923 16.42 7.3L17.7 8.58C17.91 8.79 17.91 9.14 17.7 9.35ZM8 14.94L14.06 8.88L16.11 10.93L10.06 17H8V14.94ZM8 10C3.58 10 0 11.79 0 14V16H6V14.11L10 10.11C9.34 10.03 8.67 10 8 10ZM8 0C6.93913 0 5.92172 0.421427 5.17157 1.17157C4.42143 1.92172 4 2.93913 4 4C4 5.06087 4.42143 6.07828 5.17157 6.82843C5.92172 7.57857 6.93913 8 8 8C9.06087 8 10.0783 7.57857 10.8284 6.82843C11.5786 6.07828 12 5.06087 12 4C12 2.93913 11.5786 1.92172 10.8284 1.17157C10.0783 0.421427 9.06087 0 8 0Z"
+                        fill="#006064" />
+                </svg>
+            </div>
+
+            <!-- Bar -->
+            <div class="timeline-bar"></div>
+
+            <!-- 2. Document -->
+            <div class="icon-wrapper">
+                <svg xmlns="http://www.w3.org/2000/svg" width="19" height="18" viewBox="0 0 19 18" fill="none">
+                    <path
+                        d="M14 18L11.25 15L12.41 13.84L14 15.43L17.59 11.84L18.75 13.25M9.8 18H2C1.46957 18 0.960859 17.7893 0.585786 17.4142C0.210714 17.0391 0 16.5304 0 16V2C0 0.89 0.89 0 2 0H16C16.5304 0 17.0391 0.210714 17.4142 0.585786C17.7893 0.960859 18 1.46957 18 2V9.8C17.12 9.29 16.09 9 15 9L14 9.08V8H4V10H11.69C10.8624 10.5452 10.1833 11.2876 9.71377 12.1604C9.24422 13.0332 8.99894 14.0089 9 15C9 16.09 9.29 17.12 9.8 18ZM9 12H4V14H9M14 4H4V6H14"
+                        fill="#00ACC1" />
+                </svg>
+            </div>
+
+            <!-- Bar -->
+            <div class="timeline-bar"></div>
+
+            <!-- 3. Cash -->
+            <div class="icon-wrapper">
+                <svg xmlns="http://www.w3.org/2000/svg" width="20" height="14" viewBox="0 0 20 14" fill="none">
+                    <path
+                        d="M19.3833 3.33333V11.6667C19.3833 12.5833 18.5903 13.3333 17.6211 13.3333H3.52423C3.03965 13.3333 2.64317 12.9583 2.64317 12.5C2.64317 12.0417 3.03965 11.6667 3.52423 11.6667H17.6211V3.33333C17.6211 2.875 18.0176 2.5 18.5022 2.5C18.9868 2.5 19.3833 2.875 19.3833 3.33333ZM2.64317 10C1.18062 10 0 8.88333 0 7.5V2.5C0 1.11667 1.18062 0 2.64317 0H13.2159C14.6784 0 15.859 1.11667 15.859 2.5V8.33333C15.859 9.25 15.0661 10 14.0969 10H2.64317ZM5.28634 5C5.28634 6.38333 6.46696 7.5 7.92952 7.5C9.39207 7.5 10.5727 6.38333 10.5727 5C10.5727 3.61667 9.39207 2.5 7.92952 2.5C6.46696 2.5 5.28634 3.61667 5.28634 5Z"
+                        fill="#00ACC1" />
+                </svg>
+            </div>
+
+            <!-- Bar -->
+            <div class="timeline-bar"></div>
+
+            <!-- 4. Lock -->
+            <div class="lock-icon-wrapper">
+                <!-- Original Lock Icon -->
+                <svg viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg">
+                    <path fill-rule="evenodd" clip-rule="evenodd"
+                        d="M7 7C7 4.23858 9.23858 2 12 2C14.7614 2 17 4.23858 17 7V10H19C20.1046 10 21 10.8954 21 12V20C21 21.1046 20.1046 22 19 22H5C3.89543 22 3 21.1046 3 20V12C3 10.8954 3.89543 10 5 10H7V7ZM12 4C10.3431 4 9 5.34315 9 7V10H15V7C15 5.34315 13.6569 4 12 4ZM12 14C11.4477 14 11 14.4477 11 15V17C11 17.5523 11.4477 18 12 18C12.5523 18 13 17.5523 13 17V15C13 14.4477 12.5523 14 12 14Z"
+                        fill="#00ACC1" />
+                </svg>
+            </div>
+
+            <div id="pointsValueWrap" class="points-wrapper">
+                <span id="pointsValue">0</span>
+                <span class="unit">pts</span>
+            </div>
+        </div>
+    </div>
+
+    <button id="restartBtn"
+        style="position: absolute; bottom: 20px; padding: 10px 20px; background: #00ACC1; color: white; border: none; border-radius: 8px; cursor: pointer; font-family: inherit; font-weight: 500;">Restart
+        Animation</button>
+
+    <script>
+        // Configuration Variables
+        const FLOOR = 7500;   // The value the number counts up from
+        const CEILING = 15000; // The value the number climbs up to
+
+        class Particle {
+            constructor(canvas, targetX, targetY) {
+                this.canvas = canvas;
+                this.ctx = canvas.getContext('2d');
+                this.targetX = targetX;
+                this.targetY = targetY;
+
+                // Slightly larger particles for desktop
+                this.baseSize = 0.8 + Math.random() * 0.7;
+                this.maxOpacity = 1.0;
+                this.color = '#80DDE9';
+
+                this.reset();
+            }
+
+            reset() {
+                this.progress = 0;
+                this.opacity = 0;
+                this.delay = Math.random() * 0.5;
+                this.started = false;
+
+                const rand = Math.random();
+                let side;
+                if (rand < 0.4) side = 2; // Right
+                else if (rand < 0.7) side = 0; // Left
+                else if (rand < 0.85) side = 1; // Top
+                else side = 3; // Bottom
+
+                // Spawn points relative to canvas dimensions
+                if (side === 0) { // Left
+                    this.startX = -20;
+                    this.startY = Math.random() * this.canvas.height;
+                } else if (side === 1) { // Top
+                    this.startX = Math.random() * this.canvas.width;
+                    this.startY = -20;
+                } else if (side === 2) { // Right
+                    this.startX = this.canvas.width + 20;
+                    this.startY = Math.random() * this.canvas.height;
+                } else { // Bottom
+                    this.startX = Math.random() * this.canvas.width;
+                    this.startY = this.canvas.height + 20;
+                }
+
+                this.x = this.startX;
+                this.y = this.startY;
+                this.lastX = this.x;
+                this.lastY = this.y;
+
+                // Curve control points
+                const midX = (this.startX + this.targetX) / 2;
+                const midY = (this.startY + this.targetY) / 2;
+                this.cp1x = midX + (Math.random() - 0.5) * 40; // Wider curves for desktop
+                this.cp1y = midY + (Math.random() - 0.5) * 40;
+                this.cp2x = this.targetX - (Math.random() - 0.5) * 10;
+                this.cp2y = this.targetY + (Math.random() - 0.5) * 10;
+
+                this.baseSpeed = 0.01 + Math.random() * 0.015;
+            }
+
+            update(speedMultiplier = 1.0) {
+                if (!this.started) {
+                    this.delay -= 0.016;
+                    if (this.delay <= 0) this.started = true;
+                    return;
+                }
+
+                this.lastX = this.x;
+                this.lastY = this.y;
+
+                this.progress += this.baseSpeed * speedMultiplier;
+
+                // Fade in quickly, stay opaque, fade out at very end
+                if (this.progress < 0.1) {
+                    this.opacity = (this.progress / 0.1) * this.maxOpacity;
+                } else if (this.progress > 0.9) {
+                    this.opacity = ((1 - this.progress) / 0.1) * this.maxOpacity;
+                } else {
+                    this.opacity = this.maxOpacity;
+                }
+
+                const t = this.progress;
+                const mt = 1 - t;
+                const mt2 = mt * mt;
+                const mt3 = mt2 * mt;
+                const t2 = t * t;
+                const t3 = t2 * t;
+
+                this.x = mt3 * this.startX + 3 * mt2 * t * this.cp1x + 3 * mt * t2 * this.cp2x + t3 * this.targetX;
+                this.y = mt3 * this.startY + 3 * mt2 * t * this.cp1y + 3 * mt * t2 * this.cp2y + t3 * this.targetY;
+
+                if (this.progress >= 1) this.reset();
+            }
+
+            draw() {
+                if (!this.started || this.opacity <= 0) return;
+
+                this.ctx.save();
+                this.ctx.globalAlpha = this.opacity;
+
+                const dx = this.x - this.lastX;
+                const dy = this.y - this.lastY;
+                const velocity = Math.sqrt(dx * dx + dy * dy);
+                const angle = Math.atan2(dy, dx);
+
+                this.ctx.translate(this.x, this.y);
+                this.ctx.rotate(angle);
+
+                // Stretch effect based on velocity
+                const stretch = 1 + velocity * 0.5;
+                this.ctx.fillStyle = this.color;
+                this.ctx.beginPath();
+                this.ctx.ellipse(0, 0, this.baseSize * stretch, this.baseSize, 0, 0, Math.PI * 2);
+                this.ctx.fill();
+
+                this.ctx.restore();
+            }
+        }
+
+        class ParticleSystem {
+            constructor(canvasId) {
+                this.canvas = document.getElementById(canvasId);
+                this.ctx = this.canvas.getContext('2d');
+                this.particles = [];
+                this.speedMultiplier = 4.0;
+                this.maxMultiplier = 4.0;
+                this.minMultiplier = 1.0;
+                this.animationId = null;
+
+                this.setupCanvas();
+            }
+
+            setupCanvas() {
+                const container = this.canvas.closest('.header-alert-container');
+                const rect = container.getBoundingClientRect();
+                this.canvas.width = rect.width;
+                this.canvas.height = rect.height;
+
+                // Center target exactly on the points number
+                const pointsEl = document.getElementById('pointsValue');
+                const pointsRect = pointsEl.getBoundingClientRect();
+                // Calculate relative position within the canvas
+                this.targetX = (pointsRect.left + pointsRect.width / 2) - rect.left;
+                this.targetY = (pointsRect.top + pointsRect.height / 2) - rect.top;
+            }
+
+            init(count) {
+                this.particles = [];
+                for (let i = 0; i < count; i++) {
+                    this.particles.push(new Particle(this.canvas, this.targetX, this.targetY));
+                }
+            }
+
+            updateMultiplier(val) {
+                this.speedMultiplier = Math.max(this.minMultiplier, Math.min(this.maxMultiplier, val));
+            }
+
+            start() {
+                this.init(60); // Increased particle count slightly for desktop
+                this.animate();
+            }
+
+            stop() {
+                if (this.animationId) {
+                    cancelAnimationFrame(this.animationId);
+                    this.animationId = null;
+                }
+                this.ctx.clearRect(0, 0, this.canvas.width, this.canvas.height);
+            }
+
+            animate() {
+                this.ctx.clearRect(0, 0, this.canvas.width, this.canvas.height);
+
+                if (this.speedMultiplier < 1.1 && this.particles.length > 20) {
+                    // Keep more particles alive in idle state for desktop
+                    this.particles = this.particles.filter((p, i) => i < 20 || p.progress < 0.8);
+                }
+
+                this.particles.forEach(p => {
+                    p.update(this.speedMultiplier);
+                    p.draw();
+                });
+
+                this.animationId = requestAnimationFrame(() => this.animate());
+            }
+        }
+
+        let animationFrameId = null;
+
+        function animateNumber(element, startValue, finalValue, duration = 2000, particleSystem = null) {
+            if (animationFrameId) {
+                cancelAnimationFrame(animationFrameId);
+            }
+
+            const startTime = performance.now();
+
+            // Remove bobbing class while animating
+            document.getElementById('pointsValueWrap').classList.remove('bobbing');
+
+            if (particleSystem) {
+                particleSystem.stop();
+                particleSystem.start();
+            }
+
+            function update(currentTime) {
+                const elapsed = currentTime - startTime;
+                const progress = Math.min(elapsed / duration, 1);
+                const easeOutQuint = 1 - Math.pow(1 - progress, 5);
+
+                if (particleSystem) {
+                    const particleSpeed = 1.0 + 3.0 * Math.pow(1 - progress, 3);
+                    particleSystem.updateMultiplier(particleSpeed);
+                }
+
+                const blurAmount = Math.pow(1 - progress, 1.5) * 3;
+                element.style.filter = blurAmount > 0.1 ? `blur(${blurAmount}px)` : 'none';
+
+                const currentValue = Math.floor(startValue + (finalValue - startValue) * easeOutQuint);
+                element.textContent = currentValue.toLocaleString();
+
+                const scaleProgress = Math.sin(progress * Math.PI);
+                const scale = 1 + (scaleProgress * 0.03);
+
+                element.style.transform = `scale(${scale})`;
+
+                if (progress < 1) {
+                    animationFrameId = requestAnimationFrame(update);
+                } else {
+                    element.textContent = finalValue.toLocaleString();
+                    element.style.transform = 'scale(1)';
+                    element.style.filter = 'none';
+
+                    // Add bobbing class back after animation finishes
+                    document.getElementById('pointsValueWrap').classList.add('bobbing');
+                    animationFrameId = null;
+                }
+            }
+            animationFrameId = requestAnimationFrame(update);
+        }
+
+        function startAnimation() {
+            const ps = window.particleSystem;
+            const el = document.getElementById('pointsValue');
+            animateNumber(el, FLOOR, CEILING, 2000, ps);
+        }
+
+        window.addEventListener('load', () => {
+            // Store particle system globally so we can access it
+            window.particleSystem = new ParticleSystem('particleCanvas');
+
+            startAnimation();
+
+            document.getElementById('restartBtn').addEventListener('click', startAnimation);
+        });
+
+        window.addEventListener('resize', () => {
+            // Re-setup canvas on resize to correct particle targets
+            window.particleSystem.setupCanvas();
+        });
+    </script>
+</body>
+
+</html>

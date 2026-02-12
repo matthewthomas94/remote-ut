@@ -1,0 +1,416 @@
+<!DOCTYPE html>
+<html lang="en">
+
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Header Alert - Compact</title>
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+
+        body {
+            font-family: 'Europa', -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            min-height: 100vh;
+            background: #ffffff;
+            padding: 20px;
+        }
+
+        /* Compact Pill Container */
+        .header-alert-container {
+            position: relative;
+            display: inline-flex;
+            align-items: center;
+            padding: 8px 16px;
+            background: #F5FCFD;
+            border: 1px solid #80DDE9;
+            border-radius: 12px;
+            box-shadow: 0 0 15px rgba(128, 221, 233, 0.4);
+            overflow: hidden;
+            height: 44px;
+            min-width: 140px;
+            justify-content: center;
+        }
+
+        /* Particle Canvas - Confined to the pill */
+        .particle-canvas {
+            position: absolute;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 100%;
+            pointer-events: none;
+            z-index: 1;
+        }
+
+        canvas {
+            width: 100%;
+            height: 100%;
+            border-radius: 100px;
+        }
+
+        .content-area {
+            position: relative;
+            z-index: 5;
+            display: flex;
+            align-items: center;
+            gap: 8px;
+        }
+
+        .icon-wrapper {
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            width: 20px;
+            height: 20px;
+        }
+
+        .lock-icon {
+            width: 18px;
+            height: 18px;
+        }
+
+        .points-wrapper {
+            font-size: 16px;
+            font-weight: 700;
+            color: #006064;
+            display: flex;
+            align-items: center;
+            gap: 4px;
+        }
+
+        .unit {
+            font-size: 14px;
+            font-weight: 500;
+        }
+
+        /* Bobbing Animation for Text */
+        #pointsValueWrap {
+            display: inline-flex;
+            align-items: center;
+            gap: 4px;
+        }
+
+        #pointsValueWrap.bobbing {
+            animation: bob 4000ms ease-in-out infinite;
+        }
+
+        @keyframes bob {
+            0% {
+                transform: translateY(0px);
+            }
+
+            50% {
+                transform: translateY(-1px);
+            }
+
+            /* Subtle up movement */
+            100% {
+                transform: translateY(0px);
+            }
+        }
+    </style>
+</head>
+
+<body>
+    <div class="header-alert-container">
+        <div class="particle-canvas">
+            <canvas id="particleCanvas"></canvas>
+        </div>
+
+        <div class="content-area">
+            <div class="icon-wrapper">
+                <!-- Lock Icon SVG -->
+                <svg class="lock-icon" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg">
+                    <path fill-rule="evenodd" clip-rule="evenodd"
+                        d="M7 7C7 4.23858 9.23858 2 12 2C14.7614 2 17 4.23858 17 7V10H19C20.1046 10 21 10.8954 21 12V20C21 21.1046 20.1046 22 19 22H5C3.89543 22 3 21.1046 3 20V12C3 10.8954 3.89543 10 5 10H7V7ZM12 4C10.3431 4 9 5.34315 9 7V10H15V7C15 5.34315 13.6569 4 12 4ZM12 14C11.4477 14 11 14.4477 11 15V17C11 17.5523 11.4477 18 12 18C12.5523 18 13 17.5523 13 17V15C13 14.4477 12.5523 14 12 14Z"
+                        fill="#00ACC1" />
+                </svg>
+            </div>
+
+            <div id="pointsValueWrap" class="points-wrapper">
+                <span id="pointsValue">0</span>
+                <span class="unit">pts</span>
+            </div>
+        </div>
+    </div>
+
+    <button id="restartBtn"
+        style="position: absolute; bottom: 20px; padding: 10px 20px; background: #00ACC1; color: white; border: none; border-radius: 8px; cursor: pointer; font-family: inherit; font-weight: 500;">Restart
+        Animation</button>
+
+    <script>
+        // Configuration Variables
+        const FLOOR = 9000;   // The value the number counts up from
+        const CEILING = 15000; // The value the number climbs up to
+
+        class Particle {
+            constructor(canvas, targetX, targetY) {
+                this.canvas = canvas;
+                this.ctx = canvas.getContext('2d');
+                this.targetX = targetX;
+                this.targetY = targetY;
+
+                // Smaller particles for smaller component
+                this.baseSize = 0.5 + Math.random() * 0.5;
+                this.maxOpacity = 1.0;
+                this.color = '#80DDE9';
+
+                this.reset();
+            }
+
+            reset() {
+                this.progress = 0;
+                this.opacity = 0;
+                this.delay = Math.random() * 0.5;
+                this.started = false;
+
+                const rand = Math.random();
+                let side;
+                if (rand < 0.4) side = 2; // Right
+                else if (rand < 0.7) side = 0; // Left
+                else if (rand < 0.85) side = 1; // Top
+                else side = 3; // Bottom
+
+                // Spawn points relative to small canvas dimensions
+                // We expand the spawn area slightly outside visible canvas to simulate "coming in"
+                if (side === 0) { // Left
+                    this.startX = -20;
+                    this.startY = Math.random() * this.canvas.height;
+                } else if (side === 1) { // Top
+                    this.startX = Math.random() * this.canvas.width;
+                    this.startY = -20;
+                } else if (side === 2) { // Right
+                    this.startX = this.canvas.width + 20;
+                    this.startY = Math.random() * this.canvas.height;
+                } else { // Bottom
+                    this.startX = Math.random() * this.canvas.width;
+                    this.startY = this.canvas.height + 20;
+                }
+
+                this.x = this.startX;
+                this.y = this.startY;
+                this.lastX = this.x;
+                this.lastY = this.y;
+
+                // Tighter curve control points for small space
+                const midX = (this.startX + this.targetX) / 2;
+                const midY = (this.startY + this.targetY) / 2;
+                this.cp1x = midX + (Math.random() - 0.5) * 15;
+                this.cp1y = midY + (Math.random() - 0.5) * 15;
+                this.cp2x = this.targetX - (Math.random() - 0.5) * 5;
+                this.cp2y = this.targetY + (Math.random() - 0.5) * 5;
+
+                this.baseSpeed = 0.01 + Math.random() * 0.015; // Slightly faster for small distances
+            }
+
+            update(speedMultiplier = 1.0) {
+                if (!this.started) {
+                    this.delay -= 0.016;
+                    if (this.delay <= 0) this.started = true;
+                    return;
+                }
+
+                this.lastX = this.x;
+                this.lastY = this.y;
+
+                this.progress += this.baseSpeed * speedMultiplier;
+
+                // Fade in quickly, stay opaque, fade out at very end
+                if (this.progress < 0.1) {
+                    this.opacity = (this.progress / 0.1) * this.maxOpacity;
+                } else if (this.progress > 0.9) {
+                    this.opacity = ((1 - this.progress) / 0.1) * this.maxOpacity;
+                } else {
+                    this.opacity = this.maxOpacity;
+                }
+
+                const t = this.progress;
+                const mt = 1 - t;
+                const mt2 = mt * mt;
+                const mt3 = mt2 * mt;
+                const t2 = t * t;
+                const t3 = t2 * t;
+
+                this.x = mt3 * this.startX + 3 * mt2 * t * this.cp1x + 3 * mt * t2 * this.cp2x + t3 * this.targetX;
+                this.y = mt3 * this.startY + 3 * mt2 * t * this.cp1y + 3 * mt * t2 * this.cp2y + t3 * this.targetY;
+
+                if (this.progress >= 1) this.reset();
+            }
+
+            draw() {
+                if (!this.started || this.opacity <= 0) return;
+
+                this.ctx.save();
+                this.ctx.globalAlpha = this.opacity;
+
+                const dx = this.x - this.lastX;
+                const dy = this.y - this.lastY;
+                const velocity = Math.sqrt(dx * dx + dy * dy);
+                const angle = Math.atan2(dy, dx);
+
+                this.ctx.translate(this.x, this.y);
+                this.ctx.rotate(angle);
+
+                // Less stretch for smaller space to avoid looking like long lines
+                const stretch = 1 + velocity * 0.5;
+                this.ctx.fillStyle = this.color;
+                this.ctx.beginPath();
+                this.ctx.ellipse(0, 0, this.baseSize * stretch, this.baseSize, 0, 0, Math.PI * 2);
+                this.ctx.fill();
+
+                this.ctx.restore();
+            }
+        }
+
+        class ParticleSystem {
+            constructor(canvasId) {
+                this.canvas = document.getElementById(canvasId);
+                this.ctx = this.canvas.getContext('2d');
+                this.particles = [];
+                this.speedMultiplier = 4.0;
+                this.maxMultiplier = 4.0;
+                this.minMultiplier = 1.0;
+                this.animationId = null;
+
+                this.setupCanvas();
+            }
+
+            setupCanvas() {
+                const container = this.canvas.closest('.header-alert-container');
+                const rect = container.getBoundingClientRect();
+                this.canvas.width = rect.width;
+                this.canvas.height = rect.height;
+
+                // Center target exactly on the points number
+                const pointsEl = document.getElementById('pointsValue');
+                const pointsRect = pointsEl.getBoundingClientRect();
+                // Calculate relative position within the canvas
+                this.targetX = (pointsRect.left + pointsRect.width / 2) - rect.left;
+                this.targetY = (pointsRect.top + pointsRect.height / 2) - rect.top;
+            }
+
+            init(count) {
+                this.particles = [];
+                for (let i = 0; i < count; i++) {
+                    this.particles.push(new Particle(this.canvas, this.targetX, this.targetY));
+                }
+            }
+
+            updateMultiplier(val) {
+                this.speedMultiplier = Math.max(this.minMultiplier, Math.min(this.maxMultiplier, val));
+            }
+
+            start() {
+                this.init(50);
+                this.animate();
+            }
+
+            stop() {
+                if (this.animationId) {
+                    cancelAnimationFrame(this.animationId);
+                    this.animationId = null;
+                }
+                this.ctx.clearRect(0, 0, this.canvas.width, this.canvas.height);
+            }
+
+            animate() {
+                this.ctx.clearRect(0, 0, this.canvas.width, this.canvas.height);
+
+                if (this.speedMultiplier < 1.1 && this.particles.length > 15) {
+                    this.particles = this.particles.filter((p, i) => i < 15 || p.progress < 0.8);
+                }
+
+                this.particles.forEach(p => {
+                    p.update(this.speedMultiplier);
+                    p.draw();
+                });
+
+                this.animationId = requestAnimationFrame(() => this.animate());
+            }
+        }
+
+        let animationFrameId = null;
+
+        function animateNumber(element, startValue, finalValue, duration = 2000, particleSystem = null) {
+            if (animationFrameId) {
+                cancelAnimationFrame(animationFrameId);
+            }
+
+            const startTime = performance.now();
+
+            // Remove bobbing class while animating
+            document.getElementById('pointsValueWrap').classList.remove('bobbing');
+
+            if (particleSystem) {
+                particleSystem.stop();
+                particleSystem.start();
+            }
+
+            function update(currentTime) {
+                const elapsed = currentTime - startTime;
+                const progress = Math.min(elapsed / duration, 1);
+                const easeOutQuint = 1 - Math.pow(1 - progress, 5);
+
+                if (particleSystem) {
+                    const particleSpeed = 1.0 + 3.0 * Math.pow(1 - progress, 3);
+                    particleSystem.updateMultiplier(particleSpeed);
+                }
+
+                const blurAmount = Math.pow(1 - progress, 1.5) * 3;
+                element.style.filter = blurAmount > 0.1 ? `blur(${blurAmount}px)` : 'none';
+
+                const currentValue = Math.floor(startValue + (finalValue - startValue) * easeOutQuint);
+                element.textContent = currentValue.toLocaleString();
+
+                const scaleProgress = Math.sin(progress * Math.PI);
+                const scale = 1 + (scaleProgress * 0.03);
+
+                element.style.transform = `scale(${scale})`;
+
+                if (progress < 1) {
+                    animationFrameId = requestAnimationFrame(update);
+                } else {
+                    element.textContent = finalValue.toLocaleString();
+                    element.style.transform = 'scale(1)';
+                    element.style.filter = 'none';
+
+                    // Add bobbing class back after animation finishes
+                    document.getElementById('pointsValueWrap').classList.add('bobbing');
+                    animationFrameId = null;
+                }
+            }
+            animationFrameId = requestAnimationFrame(update);
+        }
+
+        function startAnimation() {
+            const ps = window.particleSystem;
+            const el = document.getElementById('pointsValue');
+            animateNumber(el, FLOOR, CEILING, 2000, ps);
+        }
+
+        window.addEventListener('load', () => {
+            // Store particle system globally so we can access it
+            window.particleSystem = new ParticleSystem('particleCanvas');
+
+            startAnimation();
+
+            document.getElementById('restartBtn').addEventListener('click', startAnimation);
+        });
+
+        window.addEventListener('resize', () => {
+            // Handle resize better? Reload is simple but maybe abrupt for just a restart test.
+            // location.reload(); 
+            // For now keep reload to ensure canvas size is correct
+            location.reload();
+        });
+    </script>
+</body>
+
+</html>
