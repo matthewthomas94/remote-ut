@@ -16,6 +16,9 @@ This skill allows the agent to discover and reuse existing components from a Sto
     *   **Props Inspection**: Analyze component props to determine suitability.
 4.  **Extract Usage**: Get import paths and example usage code.
 
+## Configuration
+- **Storybook URL**: https://payau.github.io/payd-ui/
+
 ## Usage
 
 Before building a new component:
