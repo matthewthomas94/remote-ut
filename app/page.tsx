@@ -64,8 +64,10 @@ export default function Home() {
     setState((s) => ({ ...s, primingCheck }))
     logEvent("priming_completed")
     // Recording must be active before we drop the participant into the
-    // prototype. If getDisplayMedia rejects, PrimingStep keeps them here.
-    await startRecording()
+    // prototype. If getDisplayMedia rejects, keep them on the priming step so
+    // they can retry — spec: "do not allow progression without recording".
+    const started = await startRecording()
+    if (!started) return
     setStep(4)
   }
 

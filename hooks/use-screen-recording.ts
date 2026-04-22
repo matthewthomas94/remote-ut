@@ -166,11 +166,14 @@ export function useScreenRecording({ sessionId }: UseScreenRecordingProps) {
     }, 100)
   }, [])
 
-  const startRecording = useCallback(async () => {
+  // Returns true only when recording is actually live. Callers use the return
+  // value to gate progression — false means getDisplayMedia was rejected or
+  // the browser doesn't support screen capture, and the UI should stay put.
+  const startRecording = useCallback(async (): Promise<boolean> => {
     try {
       if (!navigator.mediaDevices || !navigator.mediaDevices.getDisplayMedia) {
         setError("Screen recording is not supported in your browser")
-        return
+        return false
       }
 
       const stream = await navigator.mediaDevices.getDisplayMedia({
@@ -233,19 +236,36 @@ export function useScreenRecording({ sessionId }: UseScreenRecordingProps) {
       setIsRecording(true)
       setError(null)
       console.log("[v0] Recording started")
+      return true
     } catch (err) {
       console.error("[v0] Error starting recording:", err)
       setError("Failed to start recording. Please ensure you granted screen sharing permission.")
+      return false
     }
   }, [restartRecordingForNewChunk])
 
-  const stopRecording = useCallback(() => {
-    if (mediaRecorderRef.current && isRecording) {
-      console.log("[v0] Stopping recording")
-      isRestartingRef.current = false
-      mediaRecorderRef.current.stop()
+  // Returns a promise that resolves once the MediaRecorder's final onstop has
+  // fired and the last chunk is sitting in allChunksRef. Callers that need to
+  // upload immediately after must await this — reading `storedChunks` state
+  // won't work because React doesn't re-render mid-handler.
+  const stopRecording = useCallback((): Promise<Blob[]> => {
+    const recorder = mediaRecorderRef.current
+    if (!recorder || recorder.state === "inactive") {
+      return Promise.resolve([...allChunksRef.current])
     }
-  }, [isRecording])
+    isRestartingRef.current = false
+    return new Promise<Blob[]>((resolve) => {
+      const previousOnStop = recorder.onstop
+      recorder.onstop = (event: Event) => {
+        // Let the hook's bookkeeping run first (flush chunk, stop tracks).
+        if (typeof previousOnStop === "function") {
+          previousOnStop.call(recorder, event)
+        }
+        resolve([...allChunksRef.current])
+      }
+      recorder.stop()
+    })
+  }, [])
 
   return {
     startRecording,

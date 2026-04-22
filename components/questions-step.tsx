@@ -20,7 +20,7 @@ interface QuestionsStepProps {
   startedAt: string
   events: LogEvent[]
   isRecording: boolean
-  stopRecording: () => void
+  stopRecording: () => Promise<Blob[]>
   uploadAllChunks: (onProgress?: (current: number, total: number) => void) => Promise<string[]>
   storedChunks: Blob[]
   onSubmit: (responses: Record<string, unknown>) => void
@@ -62,12 +62,15 @@ export function QuestionsStep({
     setError(null)
 
     try {
-      // Stop the recorder first so the last chunk lands in storedChunks.
-      if (isRecording) stopRecording()
-      await new Promise((r) => setTimeout(r, 2000))
+      // Await stopRecording so the final chunk has been flushed into the
+      // hook's internal allChunks buffer before we upload. The React state
+      // `storedChunks` won't update mid-handler, so we rely on the returned
+      // chunk list here instead.
+      const chunks = isRecording ? await stopRecording() : storedChunks
+      console.log("[questions] Chunks ready to upload:", chunks.length)
 
       let uploaded: string[] = []
-      if (storedChunks.length > 0) {
+      if (chunks.length > 0) {
         uploaded = await uploadAllChunks((current, total) => setUploadProgress({ current, total }))
       }
 
