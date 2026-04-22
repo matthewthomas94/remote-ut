@@ -1,585 +1,1179 @@
 "use client"
 
-import { useState } from "react"
+import {
+  useEffect,
+  useMemo,
+  useState,
+  type ReactNode,
+} from "react"
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
 import { Label } from "@/components/ui/label"
-import { RadioGroup, RadioGroupItem } from "@/components/ui/radio-group"
 import { Checkbox } from "@/components/ui/checkbox"
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "@/components/ui/select"
+import {
+  Dialog,
+  DialogContent,
+  DialogDescription,
+  DialogFooter,
+  DialogHeader,
+  DialogTitle,
+} from "@/components/ui/dialog"
+import { Card } from "@/components/ui/card"
 import { Alert, AlertDescription } from "@/components/ui/alert"
-import { X, AlertTriangle, CheckCircle2, ExternalLink, Plus, Lock, Check } from "lucide-react"
-import Image from "next/image"
+import {
+  Check,
+  ChevronRight,
+  Clock,
+  Copy,
+  Gift,
+  LifeBuoy,
+  Plus,
+  Search,
+  Star,
+  X,
+} from "lucide-react"
+import { DIRECTORS, type DirectorId, type Scenario } from "@/lib/scenarios"
+
+// ---------------------------------------------------------------------------
+// Top-level state machine
+//
+// Onboarding screens (O1 → O4) feed into one of two terminal states:
+//   - invited-dashboard   (O6): selected a director, confirmed ownership
+//   - contact-dashboard   (O4-contact): clicked "Contact me to verify"
+// Both are valid outcomes — they're the two choices the user test is measuring.
+// ---------------------------------------------------------------------------
+
+type Screen =
+  | "welcome"
+  | "entity"
+  | "details"
+  | "ownership"
+  | "invited-dashboard"
+  | "contact-dashboard"
+
+type FlowState = {
+  screen: Screen
+  entity: { abn: string; businessFound: boolean; principalAddress: string }
+  details: {
+    industry: string
+    monthlyRevenue: string
+    website: string
+    noOnlinePresence: boolean
+    businessDescription: string
+  }
+  ownership: { selectedDirector: DirectorId | null; inviteEmail: string; confirmOpen: boolean }
+  contact: { contactSupportOpen: boolean }
+}
+
+const INITIAL_STATE: FlowState = {
+  screen: "welcome",
+  entity: { abn: "", businessFound: false, principalAddress: "" },
+  details: {
+    industry: "",
+    monthlyRevenue: "",
+    website: "",
+    noOnlinePresence: false,
+    businessDescription: "",
+  },
+  ownership: { selectedDirector: null, inviteEmail: "", confirmOpen: false },
+  contact: { contactSupportOpen: false },
+}
+
+const INDUSTRIES = [
+  "Retail",
+  "Hospitality",
+  "Professional Services",
+  "Technology",
+  "Healthcare",
+  "Construction",
+  "Manufacturing",
+  "Other",
+]
+
+const REVENUE_BANDS = [
+  "Less than $10,000",
+  "$10,000 to $50,000",
+  "$50,000 to $200,000",
+  "$200,000 to $500,000",
+  "$500,000 to $1,000,000",
+  "$1,000,000 to $5,000,000",
+  "Over $5,000,000",
+]
+
+// ---------------------------------------------------------------------------
 
 interface PrototypeFlowProps {
   participantName: string
-  variant: "control" | "test"
-  onFinish?: () => void
+  scenario: Scenario
+  logEvent: (type: string, value?: unknown) => void
+  onFinish: () => void
 }
 
-export default function PrototypeFlow({ participantName, variant, onFinish }: PrototypeFlowProps) {
-  const [currentScreen, setCurrentScreen] = useState(1)
-  const [entityType, setEntityType] = useState("")
-  const [businessSearch, setBusinessSearch] = useState("")
-  const [industry, setIndustry] = useState("")
-  const [revenue, setRevenue] = useState("")
-  const [address, setAddress] = useState("")
-  const [website, setWebsite] = useState("")
-  const [noWebsite, setNoWebsite] = useState(false)
-  const [showSmsToast, setShowSmsToast] = useState(false)
+export default function PrototypeFlow({
+  participantName,
+  scenario,
+  logEvent,
+  onFinish,
+}: PrototypeFlowProps) {
+  const [state, setState] = useState<FlowState>(INITIAL_STATE)
+  const firstName = useMemo(() => participantName.split(/\s+/)[0] || "there", [participantName])
 
-  const handleNext = () => {
-    if (currentScreen === 4) {
-      setShowSmsToast(true)
-      setTimeout(() => {
-        setCurrentScreen(5)
-      }, 2000)
-    } else {
-      setCurrentScreen(currentScreen + 1)
-    }
+  useEffect(() => {
+    logEvent("prototype_screen", { screen: state.screen, scenario })
+  }, [state.screen, scenario, logEvent])
+
+  const goTo = (screen: Screen) => setState((s) => ({ ...s, screen }))
+
+  // ------ welcome (O1)
+  if (state.screen === "welcome") {
+    return (
+      <PayShell>
+        <O1Welcome
+          firstName={firstName}
+          onCancel={() => logEvent("prototype_cancel_clicked", { at: "welcome" })}
+          onContinue={() => {
+            logEvent("prototype_welcome_continue")
+            goTo("entity")
+          }}
+        />
+      </PayShell>
+    )
   }
 
-  const handleBack = () => {
-    if (currentScreen > 1) {
-      setCurrentScreen(currentScreen - 1)
-      setShowSmsToast(false)
-    }
-  }
+  // ------ entity (O2)
+  if (state.screen === "entity") {
+    const canContinue =
+      state.entity.businessFound && state.entity.principalAddress.trim().length > 0
+    return (
+      <PayShell>
+        <OnboardingLayout step={1}>
+          <h1 className="text-[34px] font-bold tracking-tight text-[#283E48] mb-8">
+            Business entity
+          </h1>
 
-  const shouldShowAlert = (screen: number) => {
-    if (variant === "control") {
-      return screen === 4 || screen === 5
-    } else {
-      return screen === 5
-    }
-  }
-
-  return (
-    <div className="relative w-full h-full flex flex-col bg-gray-50">
-      {/* Header */}
-      <header className="bg-white border-b border-gray-200 px-6 py-4 flex items-center justify-between flex-shrink-0">
-        <div className="flex items-center gap-2">
-          <Image src="/pay-logo.svg" alt="pay.com.au" width={120} height={32} className="h-8 w-auto" />
-        </div>
-        <button className="text-gray-400 hover:text-gray-600 transition-colors">
-          <X className="w-5 h-5" />
-        </button>
-      </header>
-
-      {/* Main Content Container */}
-      <div className="flex flex-1 overflow-hidden">
-        {/* Sidebar */}
-        <aside className="w-72 bg-white border-r border-gray-200 p-6 overflow-y-auto flex-shrink-0">
-          <nav className="space-y-1">
-            <div className={`flex items-center gap-3 py-2 ${currentScreen >= 2 ? "text-gray-900" : "text-[#3b5998]"}`}>
-              <div
-                className={`w-6 h-6 rounded-full flex items-center justify-center text-sm font-semibold ${
-                  currentScreen >= 2 ? "bg-[#3b5998] text-white" : "bg-[#3b5998] text-white"
-                }`}
-              >
-                {currentScreen >= 2 ? <Check className="w-4 h-4" /> : "1"}
-              </div>
-              <span className="font-medium text-sm">Business entity</span>
-              {currentScreen === 1 && <Lock className="ml-auto w-4 h-4 text-gray-400" />}
+          <Section
+            title="Find your business"
+            subtitle="Search by entering your business name or Australian Business Number (ABN)."
+          >
+            <div className="relative">
+              <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-muted-foreground" />
+              <Input
+                value={state.entity.abn}
+                onChange={(e) =>
+                  setState((s) => ({
+                    ...s,
+                    entity: {
+                      ...s.entity,
+                      abn: e.target.value,
+                      businessFound: e.target.value.trim().length > 0,
+                    },
+                  }))
+                }
+                onFocus={() => logEvent("prototype_abn_focus")}
+                placeholder="Start typing"
+                className="pl-9 h-[58px] text-base"
+              />
             </div>
 
-            {currentScreen >= 1 && (
-              <div className="ml-9 py-1">
-                <div className="text-sm text-gray-600">Find your business</div>
-              </div>
+            {!state.entity.businessFound && (
+              <p className="text-sm text-muted-foreground mt-3">
+                Can't find your business?{" "}
+                <a
+                  href="#"
+                  className="text-[#3866B0] hover:underline"
+                  onClick={(e) => e.preventDefault()}
+                >
+                  Contact our support team
+                </a>{" "}
+                for help.
+              </p>
             )}
 
-            <div
-              className={`flex items-center gap-3 py-2 ${
-                currentScreen >= 4
-                  ? "text-gray-900"
-                  : currentScreen >= 2 && currentScreen <= 3
-                    ? "text-[#3b5998]"
-                    : "text-gray-400"
-              }`}
+            {state.entity.businessFound && <BusinessFoundCard />}
+          </Section>
+
+          <Section
+            title="What is your principal place of business?"
+            subtitle="Help us understand the location from where you conduct most of your business. You can update this later if your address changes."
+          >
+            <Input
+              value={state.entity.principalAddress}
+              onChange={(e) =>
+                setState((s) => ({
+                  ...s,
+                  entity: { ...s.entity, principalAddress: e.target.value },
+                }))
+              }
+              placeholder="Start typing an address"
+              className="h-[58px] text-base"
+            />
+          </Section>
+
+          <p className="text-sm text-muted-foreground mt-10">
+            By proceeding you confirm that you accept the{" "}
+            <a
+              href="#"
+              className="text-[#3866B0] hover:underline"
+              onClick={(e) => e.preventDefault()}
             >
-              <div
-                className={`w-6 h-6 rounded-full flex items-center justify-center text-sm font-semibold ${
-                  currentScreen >= 4
-                    ? "bg-[#3b5998] text-white"
-                    : currentScreen >= 2 && currentScreen <= 3
-                      ? "bg-[#3b5998] text-white"
-                      : "bg-gray-200 text-gray-600"
-                }`}
+              Terms &amp; Conditions
+            </a>
+            .
+          </p>
+
+          <ButtonRow
+            primary={
+              <Button
+                disabled={!canContinue}
+                onClick={() => {
+                  logEvent("prototype_entity_submit", {
+                    businessFound: state.entity.businessFound,
+                    addressLength: state.entity.principalAddress.length,
+                  })
+                  goTo("details")
+                }}
               >
-                {currentScreen >= 4 ? <Check className="w-4 h-4" /> : "2"}
-              </div>
-              <span className="font-medium text-sm">Business details</span>
+                Save and continue
+              </Button>
+            }
+            secondary={
+              <Button
+                variant="outline"
+                onClick={() => logEvent("prototype_cancel_clicked", { at: "entity" })}
+              >
+                Cancel
+              </Button>
+            }
+          />
+        </OnboardingLayout>
+      </PayShell>
+    )
+  }
+
+  // ------ details (O3)
+  if (state.screen === "details") {
+    const detailsValid =
+      !!state.details.industry &&
+      !!state.details.monthlyRevenue &&
+      (state.details.noOnlinePresence
+        ? state.details.businessDescription.trim().length > 0
+        : state.details.website.trim().length > 0)
+
+    return (
+      <PayShell>
+        <OnboardingLayout step={2}>
+          <h1 className="text-[34px] font-bold tracking-tight text-[#283E48] mb-8">
+            Business details
+          </h1>
+
+          <div className="space-y-6 mb-8">
+            <div className="space-y-2">
+              <Label className="text-base font-bold text-[#283E48]">
+                What industry does your business operate in?
+              </Label>
+              <Select
+                value={state.details.industry}
+                onValueChange={(v) =>
+                  setState((s) => ({ ...s, details: { ...s.details, industry: v } }))
+                }
+              >
+                <SelectTrigger className="h-[58px] text-base">
+                  <SelectValue placeholder="Please select an industry" />
+                </SelectTrigger>
+                <SelectContent>
+                  {INDUSTRIES.map((i) => (
+                    <SelectItem key={i} value={i}>
+                      {i}
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
             </div>
 
-            {currentScreen >= 2 && (
-              <div className="ml-9 space-y-1 py-1">
-                <div className={`text-sm ${currentScreen === 2 ? "text-gray-900" : "text-gray-600"}`}>
-                  Industry and revenue
-                </div>
-                <div className={`text-sm ${currentScreen === 3 ? "text-gray-900" : "text-gray-600"}`}>
-                  Address and online presence
-                </div>
-              </div>
-            )}
-
-            <div className={`flex items-center gap-3 py-2 ${currentScreen >= 4 ? "text-[#3b5998]" : "text-gray-400"}`}>
-              <div
-                className={`w-6 h-6 rounded-full flex items-center justify-center text-sm font-semibold ${
-                  currentScreen >= 4 ? "bg-[#3b5998] text-white" : "bg-gray-200 text-gray-600"
-                }`}
+            <div className="space-y-2">
+              <Label className="text-base font-bold text-[#283E48]">
+                What is your monthly revenue?
+              </Label>
+              <Select
+                value={state.details.monthlyRevenue}
+                onValueChange={(v) =>
+                  setState((s) => ({ ...s, details: { ...s.details, monthlyRevenue: v } }))
+                }
               >
-                3
-              </div>
-              <span className="font-medium text-sm">ID and business verification</span>
+                <SelectTrigger className="h-[58px] text-base">
+                  <SelectValue placeholder="Set monthly revenue" />
+                </SelectTrigger>
+                <SelectContent>
+                  {REVENUE_BANDS.map((r) => (
+                    <SelectItem key={r} value={r}>
+                      {r}
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
             </div>
 
-            {currentScreen >= 4 && (
-              <div className="ml-9 py-1">
-                <div className="text-sm text-gray-900">Verify your identity</div>
-                {currentScreen >= 4 && (
-                  <>
-                    <div className="text-sm text-gray-400">Business ownership details</div>
-                    <div className="text-sm text-gray-400">Verify beneficial owners</div>
-                  </>
-                )}
+            {!state.details.noOnlinePresence ? (
+              <div className="space-y-2">
+                <Label className="text-base font-bold text-[#283E48]">
+                  What is your business website?
+                </Label>
+                <p className="text-sm text-muted-foreground">
+                  Providing links to your business websites, online store, or social media helps us
+                  verify your account quickly.
+                </p>
+                <Input
+                  value={state.details.website}
+                  onChange={(e) =>
+                    setState((s) => ({
+                      ...s,
+                      details: { ...s.details, website: e.target.value },
+                    }))
+                  }
+                  placeholder="http://www.example.com"
+                  className="h-[58px] text-base"
+                />
+                <button
+                  type="button"
+                  className="inline-flex items-center gap-1 text-[#3866B0] text-sm font-medium hover:underline"
+                  onClick={() => logEvent("prototype_add_another_website_clicked")}
+                >
+                  <Plus className="w-4 h-4" />
+                  Add another link
+                </button>
               </div>
-            )}
-          </nav>
-        </aside>
-
-        {/* Main Content */}
-        <main className="flex-1 overflow-y-auto">
-          <div className="p-12 max-w-2xl">
-            {/* Screen 1: Find your business */}
-            {currentScreen === 1 && (
-              <div className="space-y-8">
-                <h1 className="text-3xl font-bold text-gray-900">Business entity</h1>
-
-                <div className="space-y-6">
-                  <div>
-                    <h2 className="text-base font-semibold mb-2 text-gray-900">Entity type</h2>
-                    <p className="text-sm text-gray-600 mb-3 leading-relaxed">
-                      You may need to submit relevant business documents for verification, depending on your business
-                      entity type.
-                    </p>
-                    <a href="#" className="text-sm text-[#3b5998] hover:underline font-medium">
-                      I don't know my entity type
-                    </a>
-                  </div>
-
-                  <div className="border border-gray-200 rounded-lg p-6 bg-card">
-                    <Label className="text-sm font-medium mb-4 block text-gray-900">
-                      What type of entity is your business?
-                    </Label>
-                    <RadioGroup value={entityType} onValueChange={setEntityType} className="space-y-3">
-                      <div className="flex items-center space-x-3">
-                        <RadioGroupItem value="company" id="company" />
-                        <Label htmlFor="company" className="font-normal cursor-pointer text-sm text-gray-900">
-                          Company
-                        </Label>
-                      </div>
-                      <div className="flex items-center space-x-3">
-                        <RadioGroupItem value="sole-trader" id="sole-trader" />
-                        <Label htmlFor="sole-trader" className="font-normal cursor-pointer text-sm text-gray-900">
-                          Sole Trader
-                        </Label>
-                      </div>
-                      <div className="flex items-center space-x-3">
-                        <RadioGroupItem value="trust" id="trust" />
-                        <Label htmlFor="trust" className="font-normal cursor-pointer text-sm text-gray-900">
-                          Trust
-                        </Label>
-                      </div>
-                      <div className="flex items-center space-x-3">
-                        <RadioGroupItem value="partnership" id="partnership" />
-                        <Label htmlFor="partnership" className="font-normal cursor-pointer text-sm text-gray-900">
-                          Partnership
-                        </Label>
-                      </div>
-                      <div className="flex items-center space-x-3">
-                        <RadioGroupItem value="other" id="other" />
-                        <Label htmlFor="other" className="font-normal cursor-pointer text-sm text-gray-900">
-                          Other
-                        </Label>
-                      </div>
-                    </RadioGroup>
-                  </div>
-                </div>
-
-                <div className="space-y-4">
-                  <h2 className="text-base font-semibold text-gray-900">Find your business</h2>
-                  <div className="border border-gray-200 rounded-lg p-6 bg-card">
-                    <Label className="text-sm mb-3 block text-gray-900 leading-relaxed">
-                      Search by entering your business name or Australian Business Number (ABN).
-                    </Label>
-                    <Input
-                      placeholder="A real ABN is not required for this field"
-                      value={businessSearch}
-                      onChange={(e) => setBusinessSearch(e.target.value)}
-                      className="mb-3 bg-white text-gray-900"
-                    />
-                    <p className="text-sm text-gray-600 leading-relaxed">
-                      Can't find your business?{" "}
-                      <a href="#" className="text-[#3b5998] hover:underline font-medium">
-                        Contact our support team
-                      </a>{" "}
-                      for help.
-                    </p>
-                  </div>
-                </div>
-
-                <div className="text-sm text-gray-600 leading-relaxed">
-                  By proceeding you confirm that you accept the{" "}
-                  <a href="#" className="text-[#3b5998] hover:underline font-medium">
-                    Terms & Conditions
-                  </a>
-                  .
-                </div>
-
-                <div className="flex gap-3">
-                  <Button variant="outline" className="text-sm bg-transparent">
-                    Cancel
-                  </Button>
-                  <Button onClick={handleNext} className="bg-[#3b5998] hover:bg-[#2d4373] text-white text-sm">
-                    Save and continue
-                  </Button>
-                </div>
+            ) : (
+              <div className="space-y-2">
+                <Label className="text-base font-bold text-[#283E48]">
+                  In ten words can you tell us about what your business does?
+                </Label>
+                <Input
+                  value={state.details.businessDescription}
+                  onChange={(e) =>
+                    setState((s) => ({
+                      ...s,
+                      details: { ...s.details, businessDescription: e.target.value },
+                    }))
+                  }
+                  placeholder="Business description"
+                  className="h-[58px] text-base"
+                />
               </div>
             )}
 
-            {/* Screen 2: Industry and revenue */}
-            {currentScreen === 2 && (
-              <div className="space-y-8">
-                <h1 className="text-3xl font-bold text-gray-900">Business details</h1>
-
-                <div className="space-y-8">
-                  <div>
-                    <h2 className="text-base font-semibold mb-4 text-gray-900">Industry</h2>
-                    <div className="border border-gray-200 rounded-lg p-6 bg-card">
-                      <Label className="text-sm font-medium mb-3 block text-gray-900">
-                        What industry does your business operate in?
-                      </Label>
-                      <select
-                        className="w-full border border-gray-300 rounded-md px-3 py-2.5 text-sm bg-white focus:outline-none focus:ring-2 focus:ring-[#3b5998] focus:border-transparent"
-                        value={industry}
-                        onChange={(e) => setIndustry(e.target.value)}
-                      >
-                        <option value="">Please select an industry</option>
-                        <option value="retail">Retail</option>
-                        <option value="hospitality">Hospitality</option>
-                        <option value="professional">Professional Services</option>
-                        <option value="technology">Technology</option>
-                        <option value="healthcare">Healthcare</option>
-                      </select>
-                    </div>
-                  </div>
-
-                  <div>
-                    <h2 className="text-base font-semibold mb-2 text-gray-900">Monthly revenue</h2>
-                    <p className="text-sm text-gray-600 mb-4 leading-relaxed">
-                      We collect this information to personalise your experience and help you get the most out of your
-                      payments.
-                    </p>
-                    <div className="border border-gray-200 rounded-lg p-6 bg-card">
-                      <Label className="text-sm font-medium mb-4 block text-gray-900">
-                        What is your estimated monthly revenue?
-                      </Label>
-                      <RadioGroup value={revenue} onValueChange={setRevenue} className="space-y-3">
-                        <div className="flex items-center space-x-3">
-                          <RadioGroupItem value="less-10k" id="less-10k" />
-                          <Label htmlFor="less-10k" className="font-normal cursor-pointer text-sm">
-                            Less than $10,000
-                          </Label>
-                        </div>
-                        <div className="flex items-center space-x-3">
-                          <RadioGroupItem value="10k-50k" id="10k-50k" />
-                          <Label htmlFor="10k-50k" className="font-normal cursor-pointer text-sm">
-                            $10,000 to $50,000
-                          </Label>
-                        </div>
-                        <div className="flex items-center space-x-3">
-                          <RadioGroupItem value="50k-200k" id="50k-200k" />
-                          <Label htmlFor="50k-200k" className="font-normal cursor-pointer text-sm">
-                            $50,000 to $200,000
-                          </Label>
-                        </div>
-                        <div className="flex items-center space-x-3">
-                          <RadioGroupItem value="200k-500k" id="200k-500k" />
-                          <Label htmlFor="200k-500k" className="font-normal cursor-pointer text-sm">
-                            $200,000 to $500,000
-                          </Label>
-                        </div>
-                        <div className="flex items-center space-x-3">
-                          <RadioGroupItem value="500k-1m" id="500k-1m" />
-                          <Label htmlFor="500k-1m" className="font-normal cursor-pointer text-sm">
-                            $500,000 to $1,000,000
-                          </Label>
-                        </div>
-                        <div className="flex items-center space-x-3">
-                          <RadioGroupItem value="1m-5m" id="1m-5m" />
-                          <Label htmlFor="1m-5m" className="font-normal cursor-pointer text-sm">
-                            $1,000,000 to $5,000,000
-                          </Label>
-                        </div>
-                        <div className="flex items-center space-x-3">
-                          <RadioGroupItem value="over-5m" id="over-5m" />
-                          <Label htmlFor="over-5m" className="font-normal cursor-pointer text-sm">
-                            Over $5,000,000
-                          </Label>
-                        </div>
-                      </RadioGroup>
-                    </div>
-                  </div>
-                </div>
-
-                <div className="flex gap-3">
-                  <Button variant="outline" onClick={handleBack} className="text-sm bg-transparent">
-                    Back
-                  </Button>
-                  <Button onClick={handleNext} className="bg-[#3b5998] hover:bg-[#2d4373] text-white text-sm">
-                    Save and continue
-                  </Button>
-                </div>
-              </div>
-            )}
-
-            {/* Screen 3: Address and online presence */}
-            {currentScreen === 3 && (
-              <div className="space-y-8">
-                <h1 className="text-3xl font-bold text-gray-900">Business details</h1>
-
-                <div className="space-y-8">
-                  <div>
-                    <h2 className="text-base font-semibold mb-2 text-gray-900">Address</h2>
-                    <p className="text-sm text-gray-600 mb-3 leading-relaxed">
-                      Help us understand the location from where you conduct most of your business. You can update this
-                      later if your address changes.
-                    </p>
-                    <a href="#" className="text-sm text-[#3b5998] hover:underline mb-4 inline-block font-medium">
-                      Which address should I provide?
-                    </a>
-                    <div className="border border-gray-200 rounded-lg p-6 text-card bg-card">
-                      <Label className="text-sm font-medium mb-3 block text-gray-900">
-                        What is your principal place of business?
-                      </Label>
-                      <Input
-                        placeholder="A real address is not required for this field"
-                        value={address}
-                        onChange={(e) => setAddress(e.target.value)}
-                        className="bg-white text-gray-900"
-                      />
-                    </div>
-                  </div>
-
-                  <div>
-                    <h2 className="text-base font-semibold mb-2 text-gray-900">Website</h2>
-                    <p className="text-sm text-gray-600 mb-4 leading-relaxed">
-                      Providing links to your business websites, online store, or social media helps us verify your
-                      account quickly.
-                    </p>
-                    <div className="border border-gray-200 rounded-lg p-6 space-y-4 text-card bg-card">
-                      <div>
-                        <Label className="text-sm font-medium mb-3 block text-gray-900">
-                          What is your business website?
-                        </Label>
-                        <Input
-                          placeholder="http://www.example.com"
-                          value={website}
-                          onChange={(e) => setWebsite(e.target.value)}
-                          className="bg-white text-gray-900"
-                        />
-                      </div>
-                      <button className="flex items-center gap-2 text-sm text-[#3b5998] hover:underline font-medium">
-                        <Plus className="w-4 h-4" />
-                        Add another website
-                      </button>
-                    </div>
-                  </div>
-
-                  <div className="flex items-center space-x-2">
-                    <Checkbox
-                      id="no-website"
-                      checked={noWebsite}
-                      onCheckedChange={(checked) => setNoWebsite(checked as boolean)}
-                    />
-                    <Label htmlFor="no-website" className="text-sm font-normal cursor-pointer">
-                      I don't have a website or online presence
-                    </Label>
-                  </div>
-                </div>
-
-                <div className="flex gap-3">
-                  <Button variant="outline" onClick={handleBack} className="text-sm bg-transparent">
-                    Back
-                  </Button>
-                  <Button onClick={handleNext} className="bg-[#3b5998] hover:bg-[#2d4373] text-white text-sm">
-                    Save and continue
-                  </Button>
-                </div>
-              </div>
-            )}
-
-            {/* Screen 4: Biometrics initial */}
-            {currentScreen === 4 && (
-              <div className="space-y-8">
-                <h1 className="text-3xl font-bold text-gray-900">ID and business verification</h1>
-
-                <div className="space-y-6">
-                  <div>
-                    <h2 className="text-base font-semibold mb-2 text-gray-900">
-                      Verify your identity as {participantName}
-                    </h2>
-                    <p className="text-sm text-gray-600 mb-2 leading-relaxed">
-                      To open an account, we compare your ID to a selfie to ensure someone else is not using your
-                      details to open an account. If you are not a{" "}
-                      <a href="#" className="text-[#3b5998] hover:underline font-medium">
-                        beneficial owner
-                      </a>
-                      , you will not be able to open an account.
-                    </p>
-                    <a href="#" className="text-sm text-[#3b5998] hover:underline font-medium">
-                      I'm not a beneficial owner
-                    </a>
-                  </div>
-
-                  {shouldShowAlert(4) && (
-                    <Alert className="bg-amber-50 border-amber-300">
-                      <AlertTriangle className="h-4 w-4 text-amber-700" />
-                      <AlertDescription className="text-sm text-amber-900 leading-relaxed">
-                        <strong className="font-semibold">Please have physical documents ready for verification</strong>
-                        <br />
-                        In order to proceed with identity verification you will need a physical copy of your documents.{" "}
-                        <strong className="font-semibold">
-                          Any photos of screenshots of documents will not pass our verification process.
-                        </strong>
-                      </AlertDescription>
-                    </Alert>
-                  )}
-
-                  <div className="border border-gray-200 rounded-lg p-6 text-card bg-card">
-                    <h3 className="font-semibold mb-3 text-gray-900">Continue on your mobile device</h3>
-                    <p className="text-sm text-gray-600 mb-3 leading-relaxed">
-                      We'll send a link via SMS to your mobile number ending in ****5678 so you can verify your identity
-                      with Incode.
-                    </p>
-                    <p className="text-sm text-gray-600 mb-4 leading-relaxed">
-                      Once you've finished, you will be able to continue in this window.
-                    </p>
-                    <a
-                      href="#"
-                      className="text-sm text-[#3b5998] hover:underline inline-flex items-center gap-1 font-medium"
-                    >
-                      Learn more about Incode
-                      <ExternalLink className="w-3 h-3" />
-                    </a>
-                  </div>
-                </div>
-
-                <div className="flex gap-3">
-                  <Button variant="outline" onClick={handleBack} className="text-sm bg-transparent">
-                    Back
-                  </Button>
-                  <Button onClick={handleNext} className="bg-[#3b5998] hover:bg-[#2d4373] text-white text-sm">
-                    Send SMS
-                  </Button>
-                </div>
-
-                {showSmsToast && (
-                  <div className="fixed top-4 right-4 bg-white border border-gray-200 rounded-lg shadow-lg p-4 flex items-start gap-3 max-w-sm animate-in slide-in-from-top z-50">
-                    <CheckCircle2 className="w-5 h-5 text-green-600 flex-shrink-0 mt-0.5" />
-                    <div className="flex-1">
-                      <p className="font-semibold text-sm text-gray-900">SMS sent</p>
-                      <p className="text-sm text-gray-600">Please click the link in the SMS we sent to your mobile.</p>
-                    </div>
-                    <button className="text-gray-400 hover:text-gray-600">
-                      <X className="w-4 h-4" />
-                    </button>
-                  </div>
-                )}
-              </div>
-            )}
-
-            {/* Screen 5: Biometrics interim */}
-            {currentScreen === 5 && (
-              <div className="space-y-8">
-                <h1 className="text-3xl font-bold text-gray-900">Continue on your mobile device</h1>
-
-                <div className="space-y-6">
-                  <p className="text-lg text-gray-900 font-medium">
-                    Once you've finished we'll take you to the next step.
-                  </p>
-                  <p className="text-sm text-gray-600 leading-relaxed">
-                    Your Incode link will expire in 24 hours. Please keep this window open until you finish and avoid
-                    refreshing this page.
-                  </p>
-
-                  {shouldShowAlert(5) && (
-                    <Alert className="bg-amber-50 border-amber-300">
-                      <AlertTriangle className="h-4 w-4 text-amber-700" />
-                      <AlertDescription className="text-sm text-amber-900 leading-relaxed">
-                        <strong className="font-semibold">Please have physical documents ready for verification</strong>
-                        <br />
-                        In order to proceed with identity verification you will need a physical copy of your documents.{" "}
-                        <strong className="font-semibold">
-                          Any photos of screenshots of documents will not pass our verification process.
-                        </strong>
-                      </AlertDescription>
-                    </Alert>
-                  )}
-
-                  <div className="border border-gray-200 rounded-lg p-8 bg-card">
-                    <div className="flex items-center gap-12">
-                      <div className="flex-1">
-                        <h3 className="font-semibold mb-4 text-gray-900">For best results:</h3>
-                        <ul className="space-y-2.5 text-sm text-gray-700">
-                          <li className="flex items-start gap-2">
-                            <span className="text-gray-400 mt-0.5">•</span>
-                            <span>Ensure your camera lens is clean</span>
-                          </li>
-                          <li className="flex items-start gap-2">
-                            <span className="text-gray-400 mt-0.5">•</span>
-                            <span>Be in a space with good lighting</span>
-                          </li>
-                          <li className="flex items-start gap-2">
-                            <span className="text-gray-400 mt-0.5">•</span>
-                            <span>Avoid glare and reflections</span>
-                          </li>
-                          <li className="flex items-start gap-2">
-                            <span className="text-gray-400 mt-0.5">•</span>
-                            <span>Do not use your camera flash</span>
-                          </li>
-                          <li className="flex items-start gap-2">
-                            <span className="text-gray-400 mt-0.5">•</span>
-                            <span>Ensure you are using a physical document for verification</span>
-                          </li>
-                        </ul>
-                      </div>
-                      <div className="flex-shrink-0">
-                        <Image
-                          src="/verification-confirmation.svg"
-                          alt="Verification confirmation"
-                          width={240}
-                          height={240}
-                          className="w-60 h-auto"
-                        />
-                      </div>
-                    </div>
-                  </div>
-                </div>
-
-                <div className="flex gap-3">
-                  <Button variant="outline" onClick={handleBack} className="text-sm bg-transparent">
-                    Back
-                  </Button>
-                  <Button onClick={onFinish} className="bg-[#3b5998] hover:bg-[#2d4373] text-white text-sm">
-                    Finish test
-                  </Button>
-                </div>
-              </div>
-            )}
+            <div className="flex items-center gap-2">
+              <Checkbox
+                id="no-online"
+                checked={state.details.noOnlinePresence}
+                onCheckedChange={(c) =>
+                  setState((s) => ({
+                    ...s,
+                    details: { ...s.details, noOnlinePresence: c as boolean },
+                  }))
+                }
+              />
+              <label htmlFor="no-online" className="text-sm cursor-pointer">
+                I don't have a website or online presence
+              </label>
+            </div>
           </div>
-        </main>
+
+          <ButtonRow
+            primary={
+              <Button
+                disabled={!detailsValid}
+                onClick={() => {
+                  logEvent("prototype_details_submit", {
+                    industry: state.details.industry,
+                    revenue: state.details.monthlyRevenue,
+                    noOnlinePresence: state.details.noOnlinePresence,
+                  })
+                  goTo("ownership")
+                }}
+              >
+                Save and continue
+              </Button>
+            }
+            secondary={
+              <Button variant="outline" onClick={() => goTo("entity")}>
+                Back
+              </Button>
+            }
+          />
+        </OnboardingLayout>
+      </PayShell>
+    )
+  }
+
+  // ------ ownership (O4)
+  if (state.screen === "ownership") {
+    const selected = state.ownership.selectedDirector
+    const selectedDirector = DIRECTORS.find((d) => d.id === selected) ?? null
+    const canContinue = !!selected && state.ownership.inviteEmail.trim().length > 0
+
+    return (
+      <PayShell>
+        <OnboardingLayout step={3}>
+          <h1 className="text-[34px] font-bold tracking-tight text-[#283E48] mb-8">
+            ID and business verification
+          </h1>
+
+          <h2 className="text-lg font-bold text-[#283E48] mb-2">Select the account owner</h2>
+          <p className="text-[#526973] leading-relaxed mb-6">
+            Thanks for your details thus far {firstName} please select a listed director to be the
+            account owner so we can complete your application and get you started.
+          </p>
+
+          <div className="space-y-3 mb-6">
+            {DIRECTORS.map((dir) => {
+              const isSelected = state.ownership.selectedDirector === dir.id
+              return (
+                <button
+                  key={dir.id}
+                  type="button"
+                  onClick={() =>
+                    setState((s) => ({
+                      ...s,
+                      ownership: {
+                        ...s.ownership,
+                        selectedDirector: dir.id,
+                        inviteEmail: dir.inviteEmail,
+                      },
+                    }))
+                  }
+                  className={`w-full flex items-center gap-4 p-5 rounded-lg border-2 transition-colors text-left ${
+                    isSelected
+                      ? "border-[#3866B0] bg-[#F3F6FD]"
+                      : "border-gray-200 bg-white hover:border-gray-300"
+                  }`}
+                >
+                  <div className="w-10 h-10 rounded-full bg-[#D3DFF6] flex items-center justify-center text-[#3866B0] font-medium">
+                    {dir.initial}
+                  </div>
+                  <div className="flex-1">
+                    <div className="font-bold text-[#283E48]">{dir.fullName}</div>
+                    <div className="text-sm text-[#526973]">{dir.role}</div>
+                  </div>
+                  <div
+                    className={`w-5 h-5 rounded-full border-2 flex items-center justify-center ${
+                      isSelected ? "border-[#3866B0] bg-[#3866B0]" : "border-gray-300"
+                    }`}
+                  >
+                    {isSelected && <div className="w-2 h-2 rounded-full bg-white" />}
+                  </div>
+                </button>
+              )
+            })}
+          </div>
+
+          {selectedDirector && (
+            <div className="space-y-2 mb-6">
+              <Label htmlFor="invite-email" className="text-sm text-[#526973]">
+                Email invite link
+              </Label>
+              <Input
+                id="invite-email"
+                value={state.ownership.inviteEmail}
+                onChange={(e) =>
+                  setState((s) => ({
+                    ...s,
+                    ownership: { ...s.ownership, inviteEmail: e.target.value },
+                  }))
+                }
+                placeholder="Director email"
+                className="h-[58px] text-base"
+              />
+            </div>
+          )}
+
+          <p className="text-[#526973] text-sm mb-3">
+            If you aren't listed above but are a director, use the action below. Doing so will
+            trigger our team to get in touch and verify.
+          </p>
+          <Button
+            variant="outline"
+            onClick={() => {
+              logEvent("prototype_contact_me_to_verify_clicked", { scenario })
+              goTo("contact-dashboard")
+            }}
+          >
+            Contact me to verify
+          </Button>
+
+          <ButtonRow
+            primary={
+              <Button
+                disabled={!canContinue}
+                onClick={() => {
+                  logEvent("prototype_ownership_save_and_continue_clicked", {
+                    director: state.ownership.selectedDirector,
+                  })
+                  setState((s) => ({
+                    ...s,
+                    ownership: { ...s.ownership, confirmOpen: true },
+                  }))
+                }}
+              >
+                Save and continue
+              </Button>
+            }
+            secondary={
+              <Button variant="outline" onClick={() => goTo("details")}>
+                Back
+              </Button>
+            }
+          />
+        </OnboardingLayout>
+
+        <ConfirmOwnershipDialog
+          open={state.ownership.confirmOpen}
+          participantName={participantName}
+          selectedDirector={selectedDirector}
+          inviteEmail={state.ownership.inviteEmail}
+          onCancel={() => {
+            logEvent("prototype_confirm_ownership_cancel")
+            setState((s) => ({
+              ...s,
+              ownership: { ...s.ownership, confirmOpen: false },
+            }))
+          }}
+          onConfirm={() => {
+            logEvent("prototype_confirm_ownership_confirm", {
+              director: state.ownership.selectedDirector,
+            })
+            setState((s) => ({
+              ...s,
+              ownership: { ...s.ownership, confirmOpen: false },
+              screen: "invited-dashboard",
+            }))
+          }}
+        />
+      </PayShell>
+    )
+  }
+
+  // ------ terminal: invited dashboard (O6)
+  if (state.screen === "invited-dashboard") {
+    const selectedDirector = DIRECTORS.find((d) => d.id === state.ownership.selectedDirector)
+    return (
+      <DashboardShell firstName={firstName} withToast>
+        <InvitedDashboardBody
+          firstName={firstName}
+          director={selectedDirector ?? DIRECTORS[1]}
+          onFinish={() => {
+            logEvent("prototype_finish_clicked", { outcome: "invited" })
+            onFinish()
+          }}
+        />
+      </DashboardShell>
+    )
+  }
+
+  // ------ terminal: contact-me dashboard
+  return (
+    <DashboardShell firstName={firstName}>
+      <ContactDashboardBody
+        onContactSupport={() => {
+          logEvent("prototype_contact_support_clicked")
+          setState((s) => ({ ...s, contact: { contactSupportOpen: true } }))
+        }}
+        onFinish={() => {
+          logEvent("prototype_finish_clicked", { outcome: "contact-me" })
+          onFinish()
+        }}
+      />
+      <ContactSupportDialog
+        open={state.contact.contactSupportOpen}
+        onClose={() => setState((s) => ({ ...s, contact: { contactSupportOpen: false } }))}
+      />
+    </DashboardShell>
+  )
+}
+
+// ---------------------------------------------------------------------------
+// Shell + chrome components
+// ---------------------------------------------------------------------------
+
+function PayShell({ children }: { children: ReactNode }) {
+  return (
+    <div className="min-h-screen bg-[#FCFCFC] flex flex-col">
+      <PayHeader />
+      <div className="flex-1">{children}</div>
+    </div>
+  )
+}
+
+function PayHeader() {
+  return (
+    <header className="bg-white border-b border-[#E0E0E0] px-8 py-4 flex items-center justify-between">
+      <div className="flex items-center gap-2">
+        <div className="w-8 h-8 bg-[#3866B0] rounded flex items-center justify-center">
+          <span className="text-white font-bold">P</span>
+        </div>
+        <span className="font-bold text-[#283E48]">pay.com.au</span>
+      </div>
+      <Star className="w-5 h-5 text-[#BDBDBD]" />
+    </header>
+  )
+}
+
+function OnboardingLayout({ step, children }: { step: 1 | 2 | 3; children: ReactNode }) {
+  return (
+    <div className="max-w-[1024px] mx-auto flex gap-12 py-12 px-8">
+      <Stepper active={step} />
+      <div className="flex-1 max-w-[551px]">{children}</div>
+    </div>
+  )
+}
+
+function Stepper({ active }: { active: 1 | 2 | 3 }) {
+  const items = [
+    { n: 1, label: "Business entity" },
+    { n: 2, label: "Business details" },
+    { n: 3, label: "Business ownership" },
+  ] as const
+  return (
+    <nav className="w-[200px] flex-shrink-0 pt-4">
+      <ol className="space-y-4">
+        {items.map((item) => {
+          const done = item.n < active
+          const current = item.n === active
+          return (
+            <li key={item.n} className="flex items-center gap-3">
+              <div
+                className={`w-6 h-6 rounded-full flex items-center justify-center text-xs font-bold ${
+                  done || current ? "bg-[#3866B0] text-white" : "bg-[#E0E0E0] text-[#BDBDBD]"
+                }`}
+              >
+                {done ? <Check className="w-3 h-3" /> : item.n}
+              </div>
+              <span
+                className={
+                  current || done
+                    ? "text-[#283E48] font-medium text-sm"
+                    : "text-[#BDBDBD] text-sm"
+                }
+              >
+                {item.label}
+              </span>
+            </li>
+          )
+        })}
+      </ol>
+    </nav>
+  )
+}
+
+function Section({
+  title,
+  subtitle,
+  children,
+}: {
+  title: string
+  subtitle?: string
+  children: ReactNode
+}) {
+  return (
+    <div className="mb-10">
+      <h2 className="text-lg font-bold text-[#283E48] mb-1">{title}</h2>
+      {subtitle && <p className="text-[#526973] text-sm leading-relaxed mb-4">{subtitle}</p>}
+      {children}
+    </div>
+  )
+}
+
+function ButtonRow({ primary, secondary }: { primary: ReactNode; secondary: ReactNode }) {
+  return (
+    <div className="flex items-center gap-3 mt-12 pt-8 border-t border-[#E0E0E0]">
+      {secondary}
+      {primary}
+    </div>
+  )
+}
+
+// ---------------------------------------------------------------------------
+// O1
+// ---------------------------------------------------------------------------
+
+function O1Welcome({
+  firstName,
+  onCancel,
+  onContinue,
+}: {
+  firstName: string
+  onCancel: () => void
+  onContinue: () => void
+}) {
+  return (
+    <div className="flex-1 grid grid-cols-2 min-h-[calc(100vh-73px)]">
+      <div className="flex items-center justify-center px-12 bg-white">
+        <div className="max-w-[448px]">
+          <h1 className="text-[34px] font-bold tracking-tight leading-tight text-[#283E48] mb-4">
+            We're glad to have you here, {firstName}!
+          </h1>
+          <p className="text-[#526973] mb-6 leading-relaxed">
+            Start getting more out of your payments by filling in a few details about your business.
+          </p>
+          <div className="h-px bg-[#E0E0E0] my-6" />
+          <ul className="space-y-4 mb-8">
+            <li className="flex items-start gap-3">
+              <Clock className="w-6 h-6 text-[#3866B0] flex-shrink-0 mt-0.5" />
+              <div>
+                <div className="font-bold text-[#283E48] text-sm">How long will this take?</div>
+                <div className="text-[#526973] text-sm">
+                  Complete your business profile in 5-10 mins
+                </div>
+              </div>
+            </li>
+            <li className="flex items-start gap-3">
+              <LifeBuoy className="w-6 h-6 text-[#3866B0] flex-shrink-0 mt-0.5" />
+              <div>
+                <div className="font-bold text-[#283E48] text-sm">
+                  What information do I need?
+                </div>
+                <div className="text-[#526973] text-sm">
+                  You'll need your business details and government-issued documents
+                </div>
+              </div>
+            </li>
+          </ul>
+          <div className="flex gap-3">
+            <Button variant="outline" onClick={onCancel}>
+              Cancel
+            </Button>
+            <Button onClick={onContinue}>Continue</Button>
+          </div>
+        </div>
+      </div>
+
+      <div className="bg-[#F3F6FD] flex items-center justify-center p-8">
+        <Card className="w-[624px] max-w-full aspect-[624/400] flex items-center justify-center text-[#526973] shadow-lg bg-white">
+          <div className="text-center p-8">
+            <div className="text-xs uppercase tracking-wider text-[#3866B0] font-bold mb-2">
+              pay.com.au
+            </div>
+            <div className="text-[#283E48] font-bold text-xl mb-1">Welcome back</div>
+            <div className="text-sm text-[#526973]">
+              Your dashboard preview — once you've signed up you'll land here.
+            </div>
+          </div>
+        </Card>
       </div>
     </div>
+  )
+}
+
+// ---------------------------------------------------------------------------
+// O2 — business-found card
+// ---------------------------------------------------------------------------
+
+function BusinessFoundCard() {
+  const rows: Array<[string, string]> = [
+    ["ABN", "45 678 901 212"],
+    ["Entity name", "NORTHWIND TRADING PTY LTD"],
+    ["Entity type", "Company"],
+    ["Location", "VIC, 3000"],
+  ]
+  return (
+    <div className="mt-4 bg-white border border-[#E0E0E0] rounded-lg p-6">
+      <div className="font-bold text-[#283E48] mb-4">We found your business!</div>
+      <dl className="space-y-3 text-sm">
+        {rows.map(([k, v]) => (
+          <div key={k} className="grid grid-cols-[120px_1fr] gap-4">
+            <dt className="text-[#526973]">{k}</dt>
+            <dd className="font-medium text-[#283E48]">{v}</dd>
+          </div>
+        ))}
+      </dl>
+    </div>
+  )
+}
+
+// ---------------------------------------------------------------------------
+// O4 — Confirm ownership modal
+// ---------------------------------------------------------------------------
+
+function ConfirmOwnershipDialog({
+  open,
+  participantName,
+  selectedDirector,
+  inviteEmail,
+  onCancel,
+  onConfirm,
+}: {
+  open: boolean
+  participantName: string
+  selectedDirector: (typeof DIRECTORS)[number] | null
+  inviteEmail: string
+  onCancel: () => void
+  onConfirm: () => void
+}) {
+  if (!selectedDirector) return null
+  const allDirectorNames = DIRECTORS.map((d) => d.fullName).join(", ")
+  return (
+    <Dialog open={open} onOpenChange={(isOpen) => !isOpen && onCancel()}>
+      <DialogContent className="max-w-[500px]">
+        <DialogHeader>
+          <DialogTitle className="text-xl font-bold text-[#283E48]">
+            Confirm ownership
+          </DialogTitle>
+          <DialogDescription className="text-[#526973] leading-relaxed pt-2">
+            You are confirming that you are{" "}
+            <span className="font-bold text-[#283E48]">{participantName}</span> and the account
+            owner is{" "}
+            <span className="font-bold text-[#283E48]">{selectedDirector.fullName}</span>. Please
+            confirm these details are correct as you will not be able to change this.
+          </DialogDescription>
+        </DialogHeader>
+
+        <dl className="text-sm space-y-4 border-t border-b border-[#E0E0E0] py-4 my-2">
+          <div>
+            <dt className="font-bold text-[#283E48]">Directors</dt>
+            <dd className="text-[#526973]">{allDirectorNames}</dd>
+          </div>
+          <div>
+            <dt className="font-bold text-[#283E48]">Account owner</dt>
+            <dd className="text-[#526973]">{selectedDirector.fullName}</dd>
+          </div>
+          <div>
+            <dt className="font-bold text-[#283E48]">Invite email</dt>
+            <dd className="text-[#526973]">{inviteEmail}</dd>
+          </div>
+          <div>
+            <dt className="font-bold text-[#283E48]">Invite link</dt>
+            <dd className="flex items-center gap-2">
+              <a
+                href="#"
+                className="text-[#3866B0] hover:underline"
+                onClick={(e) => e.preventDefault()}
+              >
+                tiny.url/?12dlfnwez
+              </a>
+              <button
+                type="button"
+                className="text-[#526973] hover:text-[#283E48]"
+                onClick={(e) => e.preventDefault()}
+                aria-label="Copy invite link"
+              >
+                <Copy className="w-4 h-4" />
+              </button>
+            </dd>
+          </div>
+        </dl>
+
+        <DialogFooter>
+          <Button variant="outline" onClick={onCancel}>
+            Cancel
+          </Button>
+          <Button onClick={onConfirm}>Confirm</Button>
+        </DialogFooter>
+      </DialogContent>
+    </Dialog>
+  )
+}
+
+// ---------------------------------------------------------------------------
+// Dashboard shell (shared by invited + contact terminal states)
+// ---------------------------------------------------------------------------
+
+function DashboardShell({
+  firstName,
+  withToast,
+  children,
+}: {
+  firstName: string
+  withToast?: boolean
+  children: ReactNode
+}) {
+  return (
+    <div className="min-h-screen bg-[#FCFCFC] flex">
+      <DashboardSideNav />
+      <div className="flex-1 flex flex-col">
+        <header className="bg-white border-b border-[#E0E0E0] h-16 flex items-center px-6 justify-between">
+          <div className="flex items-center gap-3">
+            <div className="w-8 h-8 bg-[#3866B0] rounded flex items-center justify-center">
+              <span className="text-white font-bold">P</span>
+            </div>
+            <span className="font-bold text-[#283E48]">pay.com.au</span>
+          </div>
+          <div className="flex items-center gap-3">
+            <button className="text-sm text-[#3866B0] font-medium">Rewards →</button>
+            <div className="w-8 h-8 rounded-full bg-[#D3DFF6] flex items-center justify-center text-[#3866B0] font-medium text-sm">
+              {firstName.charAt(0).toUpperCase()}
+            </div>
+          </div>
+        </header>
+
+        <div className="flex-1 p-12 relative">
+          <h1 className="text-[34px] font-bold tracking-tight text-[#283E48] mb-8">
+            Welcome, {firstName}.
+          </h1>
+          {children}
+          {withToast && <InviteSentToast />}
+        </div>
+      </div>
+    </div>
+  )
+}
+
+function DashboardSideNav() {
+  const items = [
+    "Dashboard",
+    "Make a payment",
+    "Payments",
+    "Payees",
+    "PayWallet",
+    "Settings",
+    "Activity log",
+  ]
+  return (
+    <aside className="w-[240px] bg-gradient-to-b from-[#3866B0] to-[#003C80] text-white flex flex-col">
+      <div className="px-4 py-5 border-b border-white/10 flex items-center gap-3">
+        <div className="w-9 h-9 rounded bg-white/20 flex items-center justify-center font-bold">
+          MB
+        </div>
+        <div className="font-bold">My Business</div>
+      </div>
+      <nav className="flex-1 p-3 space-y-1">
+        {items.map((item, i) => (
+          <a
+            key={item}
+            href="#"
+            onClick={(e) => e.preventDefault()}
+            className={`block px-3 py-2 rounded text-sm ${
+              i === 0 ? "bg-white/10 font-medium" : "text-white/70 hover:bg-white/5"
+            }`}
+          >
+            {item}
+          </a>
+        ))}
+      </nav>
+      <div className="p-3">
+        <a
+          href="#"
+          onClick={(e) => e.preventDefault()}
+          className="block px-4 py-3 rounded bg-white/10 hover:bg-white/20 text-sm font-medium"
+        >
+          <span className="inline-flex items-center gap-2">
+            <Gift className="w-4 h-4" /> Earn 10,000 points
+          </span>
+        </a>
+      </div>
+    </aside>
+  )
+}
+
+function InvitedDashboardBody({
+  firstName,
+  director,
+  onFinish,
+}: {
+  firstName: string
+  director: (typeof DIRECTORS)[number]
+  onFinish: () => void
+}) {
+  // Give them a beat to absorb the outcome before the "continue" is live.
+  const [canFinish, setCanFinish] = useState(false)
+  useEffect(() => {
+    const t = setTimeout(() => setCanFinish(true), 3000)
+    return () => clearTimeout(t)
+  }, [])
+
+  return (
+    <div className="max-w-[1088px] space-y-6">
+      <div className="text-sm font-medium text-[#526973]">
+        Your account is awaiting verification
+      </div>
+
+      <Card className="p-6">
+        <div className="font-bold text-[#283E48] mb-3">What's next?</div>
+        <div className="flex items-start gap-6">
+          <div className="flex-1">
+            <p className="text-[#526973] leading-relaxed max-w-[700px]">
+              You've invited <span className="font-bold text-[#283E48]">{director.fullName}</span>{" "}
+              to complete this application. Once they accept, they'll be able to finish onboarding
+              and then assign {firstName} a role for this account.
+            </p>
+            <a
+              href="#"
+              onClick={(e) => e.preventDefault()}
+              className="mt-4 inline-flex items-center gap-1 text-[#3866B0] hover:underline text-sm font-medium"
+            >
+              Learn more about roles <ChevronRight className="w-4 h-4" />
+            </a>
+          </div>
+        </div>
+      </Card>
+
+      <div>
+        <div className="text-sm font-bold text-[#283E48] mb-3">Invite sent to:</div>
+        <Card className="p-6 space-y-4">
+          <div className="flex items-start justify-between">
+            <div>
+              <div className="font-bold text-[#283E48]">{director.fullName}</div>
+              <div className="text-[#526973]">Director</div>
+            </div>
+            <span className="inline-flex items-center gap-1 text-xs font-medium px-3 py-1 rounded-full bg-[#FFFBF6] text-[#9C5E09] border border-[#FFD08B]">
+              Pending verification
+            </span>
+          </div>
+          <div className="border-t border-[#E0E0E0]" />
+          <div className="flex items-center justify-between">
+            <div>
+              <div className="text-xs text-[#526973] mb-1">Email</div>
+              <div className="text-[#283E48]">{director.inviteEmail}</div>
+            </div>
+            <a
+              href="#"
+              className="text-[#3866B0] text-sm font-medium"
+              onClick={(e) => e.preventDefault()}
+            >
+              ✎ Edit
+            </a>
+          </div>
+          <div className="border-t border-[#E0E0E0]" />
+          <div className="flex items-center justify-between">
+            <div>
+              <div className="text-xs text-[#526973] mb-1">Invited on</div>
+              <div className="text-[#283E48]">{new Date().toLocaleDateString("en-AU")}</div>
+            </div>
+            <a
+              href="#"
+              className="text-[#3866B0] text-sm font-medium"
+              onClick={(e) => e.preventDefault()}
+            >
+              Resend invite
+            </a>
+          </div>
+        </Card>
+      </div>
+
+      <Alert className="bg-[#F7FAFF] border-[#9CC0F9]">
+        <AlertDescription className="text-[#283E48]">
+          This is the last screen of the test. Please continue to the comprehension questions when
+          ready.
+        </AlertDescription>
+      </Alert>
+
+      <div className="pt-2">
+        <Button onClick={onFinish} disabled={!canFinish} size="lg">
+          Continue to questions
+        </Button>
+      </div>
+    </div>
+  )
+}
+
+function InviteSentToast() {
+  const [visible, setVisible] = useState(true)
+  useEffect(() => {
+    const t = setTimeout(() => setVisible(false), 6000)
+    return () => clearTimeout(t)
+  }, [])
+  if (!visible) return null
+  return (
+    <div className="absolute top-6 right-6 bg-white border border-[#97EBC8] rounded-lg shadow-lg p-4 flex items-start gap-3 max-w-[357px]">
+      <div className="w-6 h-6 rounded-full bg-[#0D7E51] flex-shrink-0 flex items-center justify-center">
+        <Check className="w-4 h-4 text-white" />
+      </div>
+      <div className="flex-1">
+        <div className="font-bold text-[#283E48] text-sm">Invite sent!</div>
+        <div className="text-sm text-[#526973]">
+          The invitation was successfully sent to the email address provided.
+        </div>
+      </div>
+      <button
+        className="text-[#526973] hover:text-[#283E48]"
+        onClick={() => setVisible(false)}
+        aria-label="Dismiss"
+      >
+        <X className="w-4 h-4" />
+      </button>
+    </div>
+  )
+}
+
+function ContactDashboardBody({
+  onContactSupport,
+  onFinish,
+}: {
+  onContactSupport: () => void
+  onFinish: () => void
+}) {
+  const [canFinish, setCanFinish] = useState(false)
+  useEffect(() => {
+    const t = setTimeout(() => setCanFinish(true), 3000)
+    return () => clearTimeout(t)
+  }, [])
+
+  return (
+    <div className="max-w-[1088px] space-y-6">
+      <div className="text-sm font-medium text-[#526973]">
+        Your account is awaiting verification
+      </div>
+
+      <Card className="p-6">
+        <div className="font-bold text-[#283E48] mb-3">What's next?</div>
+        <div className="flex items-start gap-6">
+          <div className="flex-1">
+            <p className="text-[#526973] leading-relaxed max-w-[700px]">
+              We have notified our team to get in touch with you regarding your account and its
+              permissions. If this request is more urgent and requires immediate addressing contact
+              our support team directly.
+            </p>
+            <Button variant="outline" className="mt-4" onClick={onContactSupport}>
+              Contact support
+            </Button>
+          </div>
+        </div>
+      </Card>
+
+      <Alert className="bg-[#F7FAFF] border-[#9CC0F9]">
+        <AlertDescription className="text-[#283E48]">
+          This is the last screen of the test. Please continue to the comprehension questions when
+          ready.
+        </AlertDescription>
+      </Alert>
+
+      <div className="pt-2">
+        <Button onClick={onFinish} disabled={!canFinish} size="lg">
+          Continue to questions
+        </Button>
+      </div>
+    </div>
+  )
+}
+
+function ContactSupportDialog({ open, onClose }: { open: boolean; onClose: () => void }) {
+  return (
+    <Dialog open={open} onOpenChange={(o) => !o && onClose()}>
+      <DialogContent className="max-w-[602px]">
+        <DialogHeader>
+          <DialogTitle className="text-xl font-bold text-[#283E48]">Contact us</DialogTitle>
+        </DialogHeader>
+        <div className="space-y-4 py-2">
+          <div className="rounded-lg border border-[#E0E0E0] p-4">
+            <div className="font-bold text-[#283E48] mb-1">Message us</div>
+            <p className="text-sm text-[#526973]">
+              The best way to reach our team is by messaging us. Tap the chat bubble in the bottom
+              right of your screen to start a chat.
+            </p>
+          </div>
+          <div className="rounded-lg border border-[#E0E0E0] p-4">
+            <div className="font-bold text-[#283E48]">Email</div>
+          </div>
+          <div className="rounded-lg border border-[#E0E0E0] p-4">
+            <div className="font-bold text-[#283E48]">Phone</div>
+          </div>
+        </div>
+      </DialogContent>
+    </Dialog>
   )
 }

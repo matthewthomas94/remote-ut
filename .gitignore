@@ -29,3 +29,4 @@ next-env.d.ts
 # playwright exploration artifacts
 /.playwright-mcp/
 /v0-*.png
+/new-*.png

@@ -1,89 +1,98 @@
 "use client"
 
-import { useState, useEffect } from "react"
-import { useSearchParams } from "next/navigation"
+import { useCallback, useEffect, useRef, useState } from "react"
 import { WelcomeStep } from "@/components/welcome-step"
 import { ConsentStep } from "@/components/consent-step"
+import { PrimingStep } from "@/components/priming-step"
 import { TestStep } from "@/components/test-step"
 import { QuestionsStep } from "@/components/questions-step"
 import { SuccessStep } from "@/components/success-step"
 import { Progress } from "@/components/ui/progress"
 import { useScreenRecording } from "@/hooks/use-screen-recording"
+import type { Scenario } from "@/lib/scenarios"
 
-export type TestData = {
+export type LogEvent = { type: string; value?: unknown; ts: string }
+
+export type SessionState = {
+  sessionId: string | null
+  scenario: Scenario | null
   participantName: string
-  sessionId: string
-  consent: boolean
-  recordingChunks: string[]
-  variant: "control" | "test"
-  recordingEnabled: boolean
-  answers: {
-    mainMessage: string
-    suggestedAction: string
-    noticeability: number
-    clarity: number
-    additionalFeedback: string
-  }
-  timestamp: string
-  duration: number
+  primingCheck: string
+  startedAt: string
+  events: LogEvent[]
+  responses: Record<string, unknown>
 }
 
+const TOTAL_STEPS = 6
+
 export default function Home() {
-  const searchParams = useSearchParams()
   const [step, setStep] = useState(1)
-
-  const variant = (searchParams.get("variant") === "test" ? "test" : "control") as "control" | "test"
-  const recordingEnabled = searchParams.get("recording") !== "false"
-
-  useEffect(() => {
-    console.log("[v0] URL variant parameter:", searchParams.get("variant"))
-    console.log("[v0] Resolved variant:", variant)
-    console.log("[v0] URL recording parameter:", searchParams.get("recording"))
-    console.log("[v0] Recording enabled:", recordingEnabled)
-  }, [searchParams, variant, recordingEnabled])
-
-  const [testData, setTestData] = useState<Partial<TestData>>({
-    sessionId: crypto.randomUUID(),
-    recordingChunks: [],
-    timestamp: new Date().toISOString(),
-    variant,
-    recordingEnabled,
+  const [state, setState] = useState<SessionState>({
+    sessionId: null,
+    scenario: null,
+    participantName: "",
+    primingCheck: "",
+    startedAt: new Date().toISOString(),
+    events: [],
+    responses: {},
   })
 
-  useEffect(() => {
-    console.log("[v0] testData updated:", {
-      variant: testData.variant,
-      sessionId: testData.sessionId,
-      recordingEnabled: testData.recordingEnabled,
-    })
-  }, [testData.variant, testData.sessionId, testData.recordingEnabled])
+  const { startRecording, stopRecording, uploadAllChunks, isRecording, error, storedChunks } =
+    useScreenRecording({ sessionId: state.sessionId ?? "pending" })
 
-  const { startRecording, stopRecording, uploadAllChunks, isRecording, error, storedChunks } = useScreenRecording({
-    sessionId: testData.sessionId!,
-    participantName: testData.participantName || "unknown",
-  })
+  // Append-only event log shared with the prototype. Ref so logEvent stays
+  // referentially stable across renders.
+  const eventsRef = useRef<LogEvent[]>([])
+  const logEvent = useCallback((type: string, value?: unknown) => {
+    const evt: LogEvent = { type, value, ts: new Date().toISOString() }
+    eventsRef.current.push(evt)
+    setState((s) => ({ ...s, events: [...eventsRef.current] }))
+  }, [])
 
-  useEffect(() => {
-    if (step === 3 && testData.participantName && recordingEnabled) {
-      startRecording()
-    }
-  }, [step, testData.participantName, recordingEnabled, startRecording])
-
-  const totalSteps = 4
-  const progress = (step / totalSteps) * 100
-
-  const updateTestData = (data: Partial<TestData>) => {
-    setTestData((prev) => ({ ...prev, ...data }))
+  const handleWelcomeSubmit = (name: string, sessionId: string, scenario: Scenario) => {
+    setState((s) => ({ ...s, participantName: name, sessionId, scenario }))
+    logEvent("session_assigned", { scenario })
+    setStep(2)
   }
+
+  const handleConsentNext = () => {
+    logEvent("consent_granted")
+    setStep(3)
+  }
+
+  const handlePrimingNext = async (primingCheck: string) => {
+    setState((s) => ({ ...s, primingCheck }))
+    logEvent("priming_completed")
+    // Recording must be active before we drop the participant into the
+    // prototype. If getDisplayMedia rejects, PrimingStep keeps them here.
+    await startRecording()
+    setStep(4)
+  }
+
+  const handlePrototypeComplete = () => {
+    logEvent("prototype_completed")
+    setStep(5)
+  }
+
+  const handleQuestionsSubmit = (responses: Record<string, unknown>) => {
+    setState((s) => ({ ...s, responses }))
+    logEvent("questions_submitted")
+    setStep(6)
+  }
+
+  // Hide the top progress bar when the prototype takes over the viewport
+  // and on the terminal success screen.
+  const showProgress = step !== 4 && step < 6
+  const progress = (step / TOTAL_STEPS) * 100
 
   return (
     <main className="min-h-screen bg-background">
-      {step < 5 && step !== 3 && (
+      {showProgress && (
         <div className="fixed top-0 left-0 right-0 z-50 bg-background/95 backdrop-blur supports-[backdrop-filter]:bg-background/60 border-b">
           <div className="container mx-auto px-4 py-4">
             <div className="flex items-center gap-4">
               <span className="text-sm font-medium text-muted-foreground">
-                Step {step} of {totalSteps}
+                Step {step} of {TOTAL_STEPS}
               </span>
               <Progress value={progress} className="flex-1" />
             </div>
@@ -91,55 +100,42 @@ export default function Home() {
         </div>
       )}
 
-      <div className={step === 3 ? "" : "container mx-auto px-4 pt-24 pb-12"}>
-        {step === 1 && (
-          <WelcomeStep
-            onNext={(name) => {
-              updateTestData({ participantName: name })
-              setStep(2)
-            }}
+      <div className={step === 4 ? "" : "container mx-auto px-4 pt-24 pb-12"}>
+        {step === 1 && <WelcomeStep onNext={handleWelcomeSubmit} />}
+        {step === 2 && <ConsentStep onNext={handleConsentNext} onBack={() => setStep(1)} />}
+        {step === 3 && state.scenario && (
+          <PrimingStep
+            scenario={state.scenario}
+            onNext={handlePrimingNext}
+            recordingError={error}
           />
         )}
-
-        {step === 2 && (
-          <ConsentStep
-            onNext={() => {
-              updateTestData({ consent: true })
-              setStep(3)
-            }}
-            onBack={() => setStep(1)}
-          />
-        )}
-
-        {step === 3 && (
+        {step === 4 && state.scenario && (
           <TestStep
-            participantName={testData.participantName || ""}
-            variant={variant}
+            participantName={state.participantName}
+            scenario={state.scenario}
             isRecording={isRecording}
             recordingError={error}
-            onComplete={() => {
-              setStep(4)
-            }}
+            logEvent={logEvent}
+            onComplete={handlePrototypeComplete}
           />
         )}
-
-        {step === 4 && (
+        {step === 5 && state.scenario && state.sessionId && (
           <QuestionsStep
-            testData={testData as TestData}
+            sessionId={state.sessionId}
+            participantName={state.participantName}
+            scenario={state.scenario}
+            primingCheck={state.primingCheck}
+            startedAt={state.startedAt}
+            events={state.events}
             isRecording={isRecording}
             stopRecording={stopRecording}
             uploadAllChunks={uploadAllChunks}
             storedChunks={storedChunks}
-            recordingEnabled={recordingEnabled}
-            onSubmit={(answers) => {
-              updateTestData({ answers })
-              setStep(5)
-            }}
-            onBack={() => setStep(3)}
+            onSubmit={handleQuestionsSubmit}
           />
         )}
-
-        {step === 5 && <SuccessStep />}
+        {step === 6 && <SuccessStep />}
       </div>
     </main>
   )

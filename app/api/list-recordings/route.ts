@@ -1,153 +1,127 @@
 import { list } from "@vercel/blob"
 import { NextResponse } from "next/server"
+import type { Scenario } from "@/lib/scenarios"
+
+// Chunk filename pattern: {sessionId}_chunk_{N}.webm
+// Metadata filename pattern: {sessionId}_metadata.json
+// Legacy v0 filenames prefix {participantName}_ — we still parse those so
+// existing recordings keep rendering until they roll off.
+
+type ChunkInfo = {
+  url: string
+  filename: string
+  uploadedAt: string
+  size: number
+  chunkNumber: number
+}
+
+type SessionMetadata = {
+  sessionId: string
+  participantName: string
+  scenario?: Scenario
+  totalChunks?: number
+  startedAt?: string
+  submittedAt?: string
+  durationSeconds?: number
+  events?: Array<{ type: string; value?: unknown; ts: string }>
+  responses?: Record<string, unknown>
+}
+
+type SessionRecord = SessionMetadata & {
+  chunks: ChunkInfo[]
+  totalSize: number
+  uploadedAt: string
+}
+
+const UUID_RE =
+  /[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}/i
+
+function parseChunkFilename(pathname: string): {
+  sessionId: string
+  chunkNumber: number
+} | null {
+  const filename = pathname.split("/").pop() || ""
+  const base = filename.replace(/\.webm$/, "")
+  // Match _chunk_N at the end, and a UUID anywhere in the name.
+  const chunkMatch = base.match(/_chunk_(\d+)$/)
+  const idMatch = base.match(UUID_RE)
+  if (!chunkMatch || !idMatch) return null
+  return { sessionId: idMatch[0], chunkNumber: parseInt(chunkMatch[1], 10) }
+}
 
 export async function GET() {
   try {
+    if (!process.env.BLOB_READ_WRITE_TOKEN) {
+      // Local dev without blob configured: return empty so the dashboard
+      // still renders (shows "No recordings yet").
+      return NextResponse.json({ sessions: [] })
+    }
     const { blobs } = await list()
+    const metadataFiles = blobs.filter((b) => b.pathname.endsWith("_metadata.json"))
+    const recordingFiles = blobs.filter((b) => b.pathname.endsWith(".webm"))
 
-    const metadataFiles = blobs.filter((blob) => blob.pathname.endsWith("_metadata.json"))
-    const recordingFiles = blobs.filter((blob) => blob.pathname.endsWith(".webm"))
+    const sessions = new Map<string, SessionRecord>()
 
-    // Parse recording chunks
-    const recordings = recordingFiles.map((blob) => {
-      const filename = blob.pathname.split("/").pop() || ""
-      const parts = filename.replace(".webm", "").split("_")
+    // Vercel Blob returns uploadedAt as Date; normalise to ISO strings.
+    const isoFrom = (d: Date | string) => (d instanceof Date ? d.toISOString() : d)
 
-      const chunkIndex = parts.lastIndexOf("chunk")
-      const participantName = parts.slice(0, chunkIndex - 1).join("_")
-      const sessionId = parts[chunkIndex - 1]
-      const chunkNumber = Number.parseInt(parts[chunkIndex + 1] || "0", 10)
-
-      return {
-        url: blob.url,
-        filename: blob.pathname,
-        uploadedAt: blob.uploadedAt,
-        size: blob.size,
-        participantName,
-        sessionId,
-        chunkNumber,
-      }
-    })
-
-    const metadataMap = new Map()
-    for (const metadataBlob of metadataFiles) {
+    // Hydrate metadata first so chunks can attach to known sessions.
+    for (const md of metadataFiles) {
       try {
-        const response = await fetch(metadataBlob.url)
-        const metadata = await response.json()
-        const key = `${metadata.participantName}_${metadata.sessionId}`
-        console.log("[v0] Metadata for session:", key, "variant:", metadata.variant)
-        metadataMap.set(key, {
-          ...metadata,
-          metadataUploadedAt: metadataBlob.uploadedAt,
+        const res = await fetch(md.url)
+        const parsed = (await res.json()) as SessionMetadata
+        if (!parsed.sessionId) continue
+        sessions.set(parsed.sessionId, {
+          ...parsed,
+          chunks: [],
+          totalSize: 0,
+          uploadedAt: isoFrom(md.uploadedAt),
         })
-      } catch (error) {
-        console.error("[v0] Error fetching metadata:", error)
+      } catch (err) {
+        console.error("[list-recordings] Failed to parse metadata:", md.pathname, err)
       }
     }
 
-    // Group by session
-    const sessionMap = new Map<
-      string,
-      {
-        sessionId: string
-        participantName: string
-        chunks: Array<{
-          url: string
-          filename: string
-          uploadedAt: string
-          size: number
-          chunkNumber: number
-        }>
-        totalSize: number
-        uploadedAt: string
-        variant?: "control" | "test"
-        surveyResults?: {
-          mainMessage: string
-          suggestedAction: string
-          noticeability: number
-          clarity: number
-          additionalFeedback: string
-          duration: number
-          submittedAt: string
+    // Attach chunks.
+    for (const rec of recordingFiles) {
+      const parsed = parseChunkFilename(rec.pathname)
+      if (!parsed) continue
+      const recUploadedAt = isoFrom(rec.uploadedAt)
+
+      let session = sessions.get(parsed.sessionId)
+      if (!session) {
+        session = {
+          sessionId: parsed.sessionId,
+          participantName: "Unknown",
+          chunks: [],
+          totalSize: 0,
+          uploadedAt: recUploadedAt,
         }
-      }
-    >()
-
-    recordings.forEach((recording) => {
-      const key = `${recording.participantName}_${recording.sessionId}`
-
-      if (!sessionMap.has(key)) {
-        const metadata = metadataMap.get(key)
-        console.log("[v0] Creating session for:", key, "metadata found:", !!metadata, "variant:", metadata?.variant)
-        sessionMap.set(key, {
-          sessionId: recording.sessionId,
-          participantName: recording.participantName,
-          chunks: [],
-          totalSize: 0,
-          uploadedAt: recording.uploadedAt,
-          variant: metadata?.variant,
-          surveyResults: metadata
-            ? {
-                mainMessage: metadata.answers.mainMessage,
-                suggestedAction: metadata.answers.suggestedAction,
-                noticeability: metadata.answers.noticeability || 0,
-                clarity: metadata.answers.clarity || 0,
-                additionalFeedback: metadata.answers.additionalFeedback || "",
-                duration: metadata.duration,
-                submittedAt: metadata.submittedAt,
-              }
-            : undefined,
-        })
+        sessions.set(parsed.sessionId, session)
       }
 
-      const session = sessionMap.get(key)!
       session.chunks.push({
-        url: recording.url,
-        filename: recording.filename,
-        uploadedAt: recording.uploadedAt,
-        size: recording.size,
-        chunkNumber: recording.chunkNumber,
+        url: rec.url,
+        filename: rec.pathname,
+        uploadedAt: recUploadedAt,
+        size: rec.size,
+        chunkNumber: parsed.chunkNumber,
       })
-      session.totalSize += recording.size
-
-      if (new Date(recording.uploadedAt) > new Date(session.uploadedAt)) {
-        session.uploadedAt = recording.uploadedAt
+      session.totalSize += rec.size
+      if (new Date(recUploadedAt) > new Date(session.uploadedAt)) {
+        session.uploadedAt = recUploadedAt
       }
-    })
+    }
 
-    metadataMap.forEach((metadata, key) => {
-      if (!sessionMap.has(key)) {
-        console.log("[v0] Creating metadata-only session for:", key, "variant:", metadata.variant)
-        sessionMap.set(key, {
-          sessionId: metadata.sessionId,
-          participantName: metadata.participantName,
-          chunks: [],
-          totalSize: 0,
-          uploadedAt: metadata.metadataUploadedAt,
-          variant: metadata.variant,
-          surveyResults: {
-            mainMessage: metadata.answers.mainMessage,
-            suggestedAction: metadata.answers.suggestedAction,
-            noticeability: metadata.answers.noticeability || 0,
-            clarity: metadata.answers.clarity || 0,
-            additionalFeedback: metadata.answers.additionalFeedback || "",
-            duration: metadata.duration,
-            submittedAt: metadata.submittedAt,
-          },
-        })
-      }
-    })
-
-    const sessions = Array.from(sessionMap.values()).map((session) => ({
-      ...session,
-      chunks: session.chunks.sort((a, b) => a.chunkNumber - b.chunkNumber),
+    const ordered = Array.from(sessions.values()).map((s) => ({
+      ...s,
+      chunks: s.chunks.sort((a, b) => a.chunkNumber - b.chunkNumber),
     }))
+    ordered.sort((a, b) => new Date(b.uploadedAt).getTime() - new Date(a.uploadedAt).getTime())
 
-    sessions.sort((a, b) => new Date(b.uploadedAt).getTime() - new Date(a.uploadedAt).getTime())
-
-    return NextResponse.json({ sessions })
+    return NextResponse.json({ sessions: ordered })
   } catch (error) {
-    console.error("[v0] Error listing recordings:", error)
+    console.error("[list-recordings] Error:", error)
     return NextResponse.json({ error: "Failed to list recordings" }, { status: 500 })
   }
 }

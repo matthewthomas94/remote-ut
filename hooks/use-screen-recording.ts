@@ -4,12 +4,11 @@ import { useState, useCallback, useRef } from "react"
 
 interface UseScreenRecordingProps {
   sessionId: string
-  participantName: string
 }
 
 const MAX_CHUNK_SIZE = 3.5 * 1024 * 1024 // 3.5MB - safe margin for serverless function payload limit
 
-export function useScreenRecording({ sessionId, participantName }: UseScreenRecordingProps) {
+export function useScreenRecording({ sessionId }: UseScreenRecordingProps) {
   const [isRecording, setIsRecording] = useState(false)
   const [error, setError] = useState<string | null>(null)
   const [storedChunks, setStoredChunks] = useState<Blob[]>([])
@@ -42,7 +41,8 @@ export function useScreenRecording({ sessionId, participantName }: UseScreenReco
 
         console.log("[v0] Uploading chunk", i, "- Size:", chunk.size, "bytes, Type:", chunk.type)
 
-        const filename = `${participantName}_${sessionId}_chunk_${i}.webm`
+        // Filename omits participantName per PII hygiene — sessionId only.
+        const filename = `${sessionId}_chunk_${i}.webm`
 
         const file = new File([chunk], filename, { type: "video/webm;codecs=vp8" })
         const formData = new FormData()
@@ -93,7 +93,7 @@ export function useScreenRecording({ sessionId, participantName }: UseScreenReco
       console.log("[v0] All chunks uploaded successfully. Total URLs:", uploadedUrls.length)
       return uploadedUrls
     },
-    [sessionId, participantName],
+    [sessionId],
   )
 
   const restartRecordingForNewChunk = useCallback(() => {

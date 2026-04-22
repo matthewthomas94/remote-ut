@@ -1,11 +1,25 @@
 "use client"
 
-import { useEffect, useState } from "react"
+import { useEffect, useMemo, useState } from "react"
 import { Card } from "@/components/ui/card"
 import { Button } from "@/components/ui/button"
-import { Play, Pause, Download, Calendar, User, Film, MessageSquare, Clock, FlaskConical } from "lucide-react"
+import {
+  Calendar,
+  Clock,
+  Download,
+  Film,
+  MessageSquare,
+  Pause,
+  Play,
+  User,
+} from "lucide-react"
+import {
+  scenarioBadgeClasses,
+  scenarioShortLabel,
+  type Scenario,
+} from "@/lib/scenarios"
 
-interface RecordingChunk {
+type Chunk = {
   url: string
   filename: string
   uploadedAt: string
@@ -13,83 +27,80 @@ interface RecordingChunk {
   chunkNumber: number
 }
 
-interface Session {
+type Session = {
   sessionId: string
   participantName: string
-  chunks: RecordingChunk[]
+  scenario?: Scenario
+  totalChunks?: number
+  startedAt?: string
+  submittedAt?: string
+  durationSeconds?: number
+  events?: Array<{ type: string; value?: unknown; ts: string }>
+  responses?: Record<string, unknown>
+  chunks: Chunk[]
   totalSize: number
   uploadedAt: string
-  variant?: "control" | "test"
-  surveyResults?: {
-    mainMessage: string
-    suggestedAction: string
-    noticeability: number
-    clarity: number
-    additionalFeedback: string
-    duration: number
-    submittedAt: string
-  }
+}
+
+function formatBytes(bytes: number) {
+  if (bytes === 0) return "0 Bytes"
+  const k = 1024
+  const sizes = ["Bytes", "KB", "MB", "GB"]
+  const i = Math.floor(Math.log(bytes) / Math.log(k))
+  return `${Math.round((bytes / Math.pow(k, i)) * 100) / 100} ${sizes[i]}`
+}
+
+function formatDate(dateString?: string) {
+  if (!dateString) return "—"
+  return new Date(dateString).toLocaleString()
+}
+
+function formatDuration(seconds?: number) {
+  if (!seconds) return "—"
+  const m = Math.floor(seconds / 60)
+  const s = seconds % 60
+  return `${m}m ${s}s`
 }
 
 export default function RecordingsPage() {
   const [sessions, setSessions] = useState<Session[]>([])
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState<string | null>(null)
-  const [playingChunk, setPlayingChunk] = useState<string | null>(null)
-  const [expandedSession, setExpandedSession] = useState<string | null>(null)
+  const [playing, setPlaying] = useState<string | null>(null)
+  const [expanded, setExpanded] = useState<string | null>(null)
 
   useEffect(() => {
-    fetchRecordings()
+    fetch("/api/list-recordings")
+      .then((r) => (r.ok ? r.json() : Promise.reject(new Error("Failed to load"))))
+      .then((d) => setSessions(d.sessions))
+      .catch((e) => setError(e.message))
+      .finally(() => setLoading(false))
   }, [])
 
-  const fetchRecordings = async () => {
-    try {
-      setLoading(true)
-      const response = await fetch("/api/list-recordings")
-
-      if (!response.ok) {
-        throw new Error("Failed to fetch recordings")
-      }
-
-      const data = await response.json()
-      console.log("[v0] Recordings page received sessions:", data.sessions)
-      data.sessions.forEach((session: Session) => {
-        console.log("[v0] Session:", session.sessionId, "variant:", session.variant, "type:", typeof session.variant)
-      })
-      setSessions(data.sessions)
-    } catch (err) {
-      console.error("[v0] Error fetching recordings:", err)
-      setError("Failed to load recordings")
-    } finally {
-      setLoading(false)
+  const stats = useMemo(() => {
+    const total = sessions.length
+    const s1 = sessions.filter((s) => s.scenario === "s1")
+    const s2 = sessions.filter((s) => s.scenario === "s2")
+    const avg = (arr: Session[]) => {
+      const xs = arr.map((s) => s.durationSeconds ?? 0).filter((n) => n > 0)
+      if (xs.length === 0) return 0
+      return Math.round(xs.reduce((a, b) => a + b, 0) / xs.length)
     }
-  }
-
-  const formatBytes = (bytes: number) => {
-    if (bytes === 0) return "0 Bytes"
-    const k = 1024
-    const sizes = ["Bytes", "KB", "MB", "GB"]
-    const i = Math.floor(Math.log(bytes) / Math.log(k))
-    return Math.round((bytes / Math.pow(k, i)) * 100) / 100 + " " + sizes[i]
-  }
-
-  const formatDate = (dateString: string) => {
-    return new Date(dateString).toLocaleString()
-  }
-
-  const formatDuration = (ms: number) => {
-    const seconds = Math.floor(ms / 1000)
-    const minutes = Math.floor(seconds / 60)
-    const remainingSeconds = seconds % 60
-    return `${minutes}m ${remainingSeconds}s`
-  }
+    return {
+      total,
+      s1: s1.length,
+      s2: s2.length,
+      avgS1: avg(s1),
+      avgS2: avg(s2),
+    }
+  }, [sessions])
 
   if (loading) {
     return (
       <div className="min-h-screen bg-gray-50 flex items-center justify-center">
         <div className="text-center">
-          <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-blue-600 mx-auto mb-4"></div>
-          <p className="text-gray-600">Loading recordings...</p>
+          <div className="animate-spin rounded-full h-10 w-10 border-b-2 border-blue-600 mx-auto mb-3" />
+          <p className="text-gray-600">Loading recordings…</p>
         </div>
       </div>
     )
@@ -100,7 +111,7 @@ export default function RecordingsPage() {
       <div className="min-h-screen bg-gray-50 flex items-center justify-center">
         <Card className="p-8 max-w-md">
           <p className="text-red-600 mb-4">{error}</p>
-          <Button onClick={fetchRecordings}>Retry</Button>
+          <Button onClick={() => location.reload()}>Retry</Button>
         </Card>
       </div>
     )
@@ -109,220 +120,109 @@ export default function RecordingsPage() {
   return (
     <div className="min-h-screen bg-gray-50">
       <div className="max-w-7xl mx-auto px-4 py-8">
-        <div className="mb-8">
-          <h1 className="text-3xl font-bold text-gray-900 mb-2">Test Recordings</h1>
-          <p className="text-gray-600">View and manage all user testing session recordings</p>
+        <div className="mb-8 flex items-start justify-between gap-4">
+          <div>
+            <h1 className="text-3xl font-bold text-gray-900 mb-1">KYB uplift user test — recordings</h1>
+            <p className="text-gray-600">
+              Each participant hits one of two scenario variants (S1 neutral, S2 mandate) and is
+              routed through the same prototype.
+            </p>
+          </div>
+          <Button variant="outline" onClick={() => downloadCsv(sessions)}>
+            <Download className="w-4 h-4 mr-2" />
+            Download CSV
+          </Button>
+        </div>
+
+        <div className="grid grid-cols-2 md:grid-cols-4 gap-4 mb-8">
+          <StatCard label="Total sessions" value={stats.total} />
+          <StatCard
+            label="S1 — neutral"
+            value={stats.s1}
+            hint={stats.avgS1 > 0 ? `avg ${formatDuration(stats.avgS1)}` : undefined}
+            accent="blue"
+          />
+          <StatCard
+            label="S2 — mandate"
+            value={stats.s2}
+            hint={stats.avgS2 > 0 ? `avg ${formatDuration(stats.avgS2)}` : undefined}
+            accent="orange"
+          />
+          <StatCard
+            label="Split"
+            value={`${stats.s1} / ${stats.s2}`}
+            hint="S1 / S2"
+          />
         </div>
 
         {sessions.length === 0 ? (
           <Card className="p-12 text-center">
-            <Film className="w-16 h-16 text-gray-400 mx-auto mb-4" />
-            <h3 className="text-xl font-semibold text-gray-900 mb-2">No recordings yet</h3>
-            <p className="text-gray-600">Recordings will appear here once users complete test sessions</p>
+            <Film className="w-12 h-12 text-gray-400 mx-auto mb-3" />
+            <h3 className="text-lg font-semibold text-gray-900 mb-1">No recordings yet</h3>
+            <p className="text-gray-600">
+              Sessions will appear here once participants complete the test.
+            </p>
           </Card>
         ) : (
-          <div className="space-y-6">
+          <div className="space-y-4">
             {sessions.map((session) => {
-              const isExpanded = expandedSession === session.sessionId
-              console.log("[v0] Rendering session:", session.sessionId, "variant:", session.variant)
-
+              const isExpanded = expanded === session.sessionId
               return (
                 <Card key={session.sessionId} className="overflow-hidden">
                   <div
-                    className="p-6 cursor-pointer hover:bg-gray-50 transition-colors"
-                    onClick={() => setExpandedSession(isExpanded ? null : session.sessionId)}
+                    className="p-5 cursor-pointer hover:bg-gray-50 transition-colors"
+                    onClick={() =>
+                      setExpanded(isExpanded ? null : session.sessionId)
+                    }
                   >
-                    <div className="flex items-start justify-between">
-                      <div className="flex-1">
-                        <div className="flex items-center gap-3 mb-3">
-                          <div className="w-10 h-10 rounded-full bg-blue-100 flex items-center justify-center">
-                            <User className="w-5 h-5 text-blue-600" />
+                    <div className="flex items-start justify-between gap-4">
+                      <div className="flex-1 min-w-0">
+                        <div className="flex items-center gap-3 mb-2 flex-wrap">
+                          <div className="w-9 h-9 rounded-full bg-blue-100 flex items-center justify-center flex-shrink-0">
+                            <User className="w-4 h-4 text-blue-600" />
                           </div>
-                          <div>
-                            <h3 className="text-lg font-semibold text-gray-900">{session.participantName}</h3>
-                            <p className="text-sm text-gray-500">Session ID: {session.sessionId}</p>
+                          <div className="min-w-0">
+                            <h3 className="text-base font-semibold text-gray-900 truncate">
+                              {session.participantName}
+                            </h3>
+                            <p className="text-xs text-gray-500 truncate">
+                              {session.sessionId.slice(0, 8)}…
+                            </p>
                           </div>
-                          <div
-                            className={`px-3 py-1 rounded-full text-xs font-medium flex items-center gap-1.5 ${
-                              !session.variant
-                                ? "bg-gray-100 text-gray-600"
-                                : session.variant === "control"
-                                  ? "bg-blue-100 text-blue-700"
-                                  : "bg-purple-100 text-purple-700"
-                            }`}
+                          <span
+                            className={`px-2.5 py-0.5 rounded-full text-xs font-medium border ${scenarioBadgeClasses(session.scenario)}`}
                           >
-                            <FlaskConical className="w-3 h-3" />
-                            {!session.variant
-                              ? "No Variant Data"
-                              : session.variant === "control"
-                                ? "Control"
-                                : "Test Variant"}
-                          </div>
-                        </div>
-
-                        <div className="flex flex-wrap gap-4 text-sm text-gray-600">
-                          <div className="flex items-center gap-2">
-                            <Calendar className="w-4 h-4" />
-                            {formatDate(session.uploadedAt)}
-                          </div>
-                          <div className="flex items-center gap-2">
-                            <Film className="w-4 h-4" />
-                            {session.chunks.length} chunk{session.chunks.length !== 1 ? "s" : ""}
-                          </div>
-                          <div className="text-gray-500">Total size: {formatBytes(session.totalSize)}</div>
-                          {session.surveyResults && (
-                            <div className="flex items-center gap-2 text-green-600">
-                              <MessageSquare className="w-4 h-4" />
-                              Survey completed
-                            </div>
+                            {scenarioShortLabel(session.scenario)}
+                          </span>
+                          {session.submittedAt && (
+                            <span className="inline-flex items-center gap-1 text-xs text-green-700 bg-green-50 border border-green-200 rounded-full px-2.5 py-0.5">
+                              <MessageSquare className="w-3 h-3" />
+                              Completed
+                            </span>
                           )}
                         </div>
+                        <div className="flex flex-wrap gap-3 text-xs text-gray-600 pl-12">
+                          <span className="inline-flex items-center gap-1">
+                            <Calendar className="w-3 h-3" />
+                            {formatDate(session.submittedAt ?? session.uploadedAt)}
+                          </span>
+                          <span className="inline-flex items-center gap-1">
+                            <Clock className="w-3 h-3" />
+                            {formatDuration(session.durationSeconds)}
+                          </span>
+                          <span className="inline-flex items-center gap-1">
+                            <Film className="w-3 h-3" />
+                            {session.chunks.length} chunk{session.chunks.length === 1 ? "" : "s"} · {formatBytes(session.totalSize)}
+                          </span>
+                        </div>
                       </div>
-
                       <Button variant="outline" size="sm">
-                        {isExpanded ? "Hide" : "View"} Details
+                        {isExpanded ? "Hide" : "View"} details
                       </Button>
                     </div>
                   </div>
 
-                  {isExpanded && (
-                    <div className="border-t bg-gray-50 p-6 space-y-6">
-                      <div>
-                        <h4 className="font-semibold text-gray-900 mb-4 flex items-center gap-2">
-                          <FlaskConical className="w-5 h-5" />
-                          A/B Test Variant
-                        </h4>
-                        <div className="bg-white rounded-lg p-6 border">
-                          {!session.variant ? (
-                            <div className="text-gray-500 text-sm">
-                              No variant data available for this session. This may be an older session created before
-                              A/B testing was implemented.
-                            </div>
-                          ) : (
-                            <div className="flex items-start gap-4">
-                              <div
-                                className={`px-4 py-2 rounded-lg font-medium ${
-                                  session.variant === "control"
-                                    ? "bg-blue-100 text-blue-700"
-                                    : "bg-purple-100 text-purple-700"
-                                }`}
-                              >
-                                {session.variant === "control" ? "Control Group" : "Test Variant"}
-                              </div>
-                              <div className="flex-1">
-                                <p className="text-sm text-gray-600">
-                                  {session.variant === "control"
-                                    ? "Alert displayed on initial biometrics screen and interim screen"
-                                    : "Alert displayed only on final interim screen after SMS sent"}
-                                </p>
-                              </div>
-                            </div>
-                          )}
-                        </div>
-                      </div>
-
-                      {session.surveyResults && (
-                        <div>
-                          <h4 className="font-semibold text-gray-900 mb-4 flex items-center gap-2">
-                            <MessageSquare className="w-5 h-5" />
-                            Survey Results
-                          </h4>
-                          <div className="bg-white rounded-lg p-6 border space-y-4">
-                            <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-                              <div>
-                                <p className="text-sm font-medium text-gray-700 mb-2">Main Message</p>
-                                <p className="text-gray-900">{session.surveyResults.mainMessage}</p>
-                              </div>
-                              <div>
-                                <p className="text-sm font-medium text-gray-700 mb-2">Suggested Action</p>
-                                <p className="text-gray-900">{session.surveyResults.suggestedAction}</p>
-                              </div>
-                            </div>
-
-                            <div className="pt-4 border-t">
-                              <div>
-                                <p className="text-sm font-medium text-gray-700 mb-2">Test Duration</p>
-                                <div className="flex items-center gap-2">
-                                  <Clock className="w-5 h-5 text-gray-400" />
-                                  <span className="text-gray-900">
-                                    {formatDuration(session.surveyResults.duration)}
-                                  </span>
-                                </div>
-                              </div>
-                            </div>
-
-                            {session.surveyResults.additionalFeedback && (
-                              <div className="pt-4 border-t">
-                                <p className="text-sm font-medium text-gray-700 mb-2">Additional Feedback</p>
-                                <p className="text-gray-900">{session.surveyResults.additionalFeedback}</p>
-                              </div>
-                            )}
-
-                            <div className="pt-4 border-t">
-                              <p className="text-xs text-gray-500">
-                                Submitted: {formatDate(session.surveyResults.submittedAt)}
-                              </p>
-                            </div>
-                          </div>
-                        </div>
-                      )}
-
-                      <div>
-                        <h4 className="font-semibold text-gray-900 mb-4">Recording Chunks ({session.chunks.length})</h4>
-                        <div className="space-y-4">
-                          {session.chunks.map((chunk) => {
-                            const isPlaying = playingChunk === chunk.url
-
-                            return (
-                              <div key={chunk.url} className="bg-white rounded-lg p-4 border">
-                                <div className="flex items-center justify-between mb-3">
-                                  <div>
-                                    <p className="font-medium text-gray-900">Chunk {chunk.chunkNumber + 1}</p>
-                                    <p className="text-sm text-gray-500">
-                                      {formatBytes(chunk.size)} • {formatDate(chunk.uploadedAt)}
-                                    </p>
-                                  </div>
-                                  <div className="flex gap-2">
-                                    <Button
-                                      size="sm"
-                                      variant="outline"
-                                      onClick={() => setPlayingChunk(isPlaying ? null : chunk.url)}
-                                    >
-                                      {isPlaying ? (
-                                        <>
-                                          <Pause className="w-4 h-4 mr-2" />
-                                          Hide
-                                        </>
-                                      ) : (
-                                        <>
-                                          <Play className="w-4 h-4 mr-2" />
-                                          Play
-                                        </>
-                                      )}
-                                    </Button>
-                                    <Button size="sm" variant="outline" asChild>
-                                      <a href={chunk.url} download>
-                                        <Download className="w-4 h-4 mr-2" />
-                                        Download
-                                      </a>
-                                    </Button>
-                                  </div>
-                                </div>
-
-                                {isPlaying && (
-                                  <div className="mt-4">
-                                    <video src={chunk.url} controls autoPlay className="w-full rounded-lg border">
-                                      Your browser does not support video playback.
-                                    </video>
-                                  </div>
-                                )}
-                              </div>
-                            )
-                          })}
-                        </div>
-                      </div>
-                    </div>
-                  )}
+                  {isExpanded && <ExpandedSession session={session} playing={playing} setPlaying={setPlaying} />}
                 </Card>
               )
             })}
@@ -331,4 +231,202 @@ export default function RecordingsPage() {
       </div>
     </div>
   )
+}
+
+function StatCard({
+  label,
+  value,
+  hint,
+  accent,
+}: {
+  label: string
+  value: number | string
+  hint?: string
+  accent?: "blue" | "orange"
+}) {
+  const accentClass =
+    accent === "blue"
+      ? "border-l-4 border-blue-500"
+      : accent === "orange"
+      ? "border-l-4 border-orange-500"
+      : ""
+  return (
+    <Card className={`p-4 ${accentClass}`}>
+      <div className="text-xs text-gray-500 mb-1">{label}</div>
+      <div className="text-2xl font-semibold text-gray-900">{value}</div>
+      {hint && <div className="text-xs text-gray-500 mt-1">{hint}</div>}
+    </Card>
+  )
+}
+
+function ExpandedSession({
+  session,
+  playing,
+  setPlaying,
+}: {
+  session: Session
+  playing: string | null
+  setPlaying: (url: string | null) => void
+}) {
+  const { responses = {}, events = [] } = session
+  const primingCheck = typeof responses.primingCheck === "string" ? responses.primingCheck : ""
+  const otherResponses = Object.entries(responses).filter(([k]) => k !== "primingCheck")
+
+  return (
+    <div className="border-t bg-gray-50 p-6 space-y-6">
+      <section>
+        <h4 className="font-semibold text-gray-900 mb-2 text-sm">Scenario shown</h4>
+        <div className="bg-white rounded p-4 border text-sm text-gray-700">
+          {scenarioShortLabel(session.scenario)}
+        </div>
+      </section>
+
+      <section>
+        <h4 className="font-semibold text-gray-900 mb-2 text-sm">Priming check</h4>
+        <div className="bg-white rounded p-4 border text-sm text-gray-800 whitespace-pre-wrap">
+          {primingCheck || <span className="text-gray-400">(none)</span>}
+        </div>
+      </section>
+
+      {otherResponses.length > 0 && (
+        <section>
+          <h4 className="font-semibold text-gray-900 mb-2 text-sm">Comprehension responses</h4>
+          <div className="bg-white rounded p-4 border space-y-3">
+            {otherResponses.map(([k, v]) => (
+              <div key={k}>
+                <div className="text-xs font-medium text-gray-700 mb-1">{k}</div>
+                <div className="text-sm text-gray-800 whitespace-pre-wrap">
+                  {typeof v === "string" || typeof v === "number" ? String(v) : JSON.stringify(v)}
+                </div>
+              </div>
+            ))}
+          </div>
+        </section>
+      )}
+
+      <section>
+        <h4 className="font-semibold text-gray-900 mb-2 text-sm">Event timeline ({events.length})</h4>
+        <div className="bg-white rounded border max-h-72 overflow-auto">
+          <table className="w-full text-xs">
+            <thead className="bg-gray-50 text-gray-600 sticky top-0">
+              <tr>
+                <th className="text-left p-2 w-44">Timestamp</th>
+                <th className="text-left p-2">Type</th>
+                <th className="text-left p-2">Value</th>
+              </tr>
+            </thead>
+            <tbody>
+              {events.map((e, i) => (
+                <tr key={i} className="border-t">
+                  <td className="p-2 font-mono">{new Date(e.ts).toLocaleTimeString()}</td>
+                  <td className="p-2">{e.type}</td>
+                  <td className="p-2 font-mono text-gray-700">
+                    {e.value ? JSON.stringify(e.value) : ""}
+                  </td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
+      </section>
+
+      <section>
+        <h4 className="font-semibold text-gray-900 mb-2 text-sm">
+          Recording chunks ({session.chunks.length})
+        </h4>
+        <div className="space-y-3">
+          {session.chunks.map((chunk) => {
+            const isPlaying = playing === chunk.url
+            return (
+              <div key={chunk.url} className="bg-white rounded p-4 border">
+                <div className="flex items-center justify-between mb-3">
+                  <div>
+                    <p className="font-medium text-gray-900 text-sm">Chunk {chunk.chunkNumber + 1}</p>
+                    <p className="text-xs text-gray-500">
+                      {formatBytes(chunk.size)} • {formatDate(chunk.uploadedAt)}
+                    </p>
+                  </div>
+                  <div className="flex gap-2">
+                    <Button
+                      size="sm"
+                      variant="outline"
+                      onClick={() => setPlaying(isPlaying ? null : chunk.url)}
+                    >
+                      {isPlaying ? (
+                        <>
+                          <Pause className="w-3 h-3 mr-1" />
+                          Hide
+                        </>
+                      ) : (
+                        <>
+                          <Play className="w-3 h-3 mr-1" />
+                          Play
+                        </>
+                      )}
+                    </Button>
+                    <Button size="sm" variant="outline" asChild>
+                      <a href={chunk.url} download>
+                        <Download className="w-3 h-3 mr-1" />
+                        Download
+                      </a>
+                    </Button>
+                  </div>
+                </div>
+                {isPlaying && (
+                  <video src={chunk.url} controls autoPlay className="w-full rounded border">
+                    Your browser does not support video playback.
+                  </video>
+                )}
+              </div>
+            )
+          })}
+        </div>
+      </section>
+    </div>
+  )
+}
+
+function downloadCsv(sessions: Session[]) {
+  // Flatten responses into columns so analysts can sort/filter in sheets.
+  // Any new response key shows up automatically.
+  const responseKeys = Array.from(
+    new Set(sessions.flatMap((s) => Object.keys(s.responses ?? {}))),
+  )
+  const headers = [
+    "sessionId",
+    "participantName",
+    "scenario",
+    "startedAt",
+    "submittedAt",
+    "durationSeconds",
+    "totalChunks",
+    ...responseKeys.map((k) => `response.${k}`),
+  ]
+  const escape = (v: unknown) => {
+    if (v === null || v === undefined) return ""
+    const s = typeof v === "string" ? v : JSON.stringify(v)
+    return `"${s.replace(/"/g, '""')}"`
+  }
+  const rows = sessions.map((s) =>
+    [
+      s.sessionId,
+      s.participantName,
+      s.scenario ?? "",
+      s.startedAt ?? "",
+      s.submittedAt ?? "",
+      s.durationSeconds ?? "",
+      s.totalChunks ?? s.chunks.length,
+      ...responseKeys.map((k) => s.responses?.[k]),
+    ]
+      .map(escape)
+      .join(","),
+  )
+  const csv = [headers.join(","), ...rows].join("\n")
+  const blob = new Blob([csv], { type: "text/csv;charset=utf-8" })
+  const url = URL.createObjectURL(blob)
+  const a = document.createElement("a")
+  a.href = url
+  a.download = `kyb-uplift-sessions-${new Date().toISOString().slice(0, 10)}.csv`
+  a.click()
+  URL.revokeObjectURL(url)
 }

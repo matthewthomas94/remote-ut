@@ -12,23 +12,18 @@ export function SuccessStep() {
           <div className="flex justify-center mb-4">
             <CheckCircle2 className="w-16 h-16 text-green-500" />
           </div>
-          <CardTitle className="text-2xl font-bold">Thank You!</CardTitle>
+          <CardTitle className="text-2xl font-bold">Thanks for helping us out</CardTitle>
           <CardDescription className="text-base mt-2">
-            Your recording and responses have been successfully submitted
+            Your responses have been recorded. You can close this window now.
           </CardDescription>
         </CardHeader>
-        <CardContent className="space-y-4">
-          <p className="text-muted-foreground leading-relaxed">
-            We appreciate your participation in this study. Your feedback will help us improve the user experience.
+        <CardContent>
+          <Button onClick={() => window.close()} variant="outline" className="w-full">
+            Close window
+          </Button>
+          <p className="text-xs text-muted-foreground mt-3">
+            If the button doesn't work, you can close the tab manually.
           </p>
-          <div className="pt-4">
-            <Button onClick={() => window.close()} variant="outline" className="w-full">
-              Close Window
-            </Button>
-            <p className="text-xs text-muted-foreground mt-3">
-              If the button doesn't work, you can manually close this tab or window.
-            </p>
-          </div>
         </CardContent>
       </Card>
     </div>

@@ -1,117 +1,101 @@
 "use client"
 
 import type React from "react"
-import { Loader2 } from "lucide-react"
-
 import { useState } from "react"
+import { Loader2 } from "lucide-react"
 import { Button } from "@/components/ui/button"
 import { Label } from "@/components/ui/label"
+import { Input } from "@/components/ui/input"
 import { Textarea } from "@/components/ui/textarea"
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card"
 import { Progress } from "@/components/ui/progress"
-import type { TestData } from "@/app/page"
+import { COMPREHENSION_QUESTIONS, type Scenario, type Question } from "@/lib/scenarios"
+import type { LogEvent } from "@/app/page"
 
 interface QuestionsStepProps {
-  testData: TestData
+  sessionId: string
+  participantName: string
+  scenario: Scenario
+  primingCheck: string
+  startedAt: string
+  events: LogEvent[]
   isRecording: boolean
   stopRecording: () => void
   uploadAllChunks: (onProgress?: (current: number, total: number) => void) => Promise<string[]>
   storedChunks: Blob[]
-  recordingEnabled: boolean
-  onSubmit: (answers: TestData["answers"]) => void
-  onBack: () => void
+  onSubmit: (responses: Record<string, unknown>) => void
 }
 
 export function QuestionsStep({
-  testData,
+  sessionId,
+  participantName,
+  scenario,
+  primingCheck,
+  startedAt,
+  events,
   isRecording,
   stopRecording,
   uploadAllChunks,
   storedChunks,
-  recordingEnabled,
   onSubmit,
-  onBack,
 }: QuestionsStepProps) {
-  const [answers, setAnswers] = useState({
-    mainMessage: "",
-    suggestedAction: "",
-    noticeability: 0,
-    clarity: 0,
-    additionalFeedback: "",
-  })
-
+  const visibleQuestions = COMPREHENSION_QUESTIONS.filter((q) => !q.showIf || q.showIf(scenario))
+  const [answers, setAnswers] = useState<Record<string, unknown>>({})
   const [isSubmitting, setIsSubmitting] = useState(false)
   const [uploadProgress, setUploadProgress] = useState({ current: 0, total: 0 })
+  const [error, setError] = useState<string | null>(null)
 
-  const isValid = answers.mainMessage.trim() && answers.suggestedAction.trim()
+  const isValid = visibleQuestions.every((q) => {
+    if (!q.required) return true
+    const v = answers[q.id]
+    if (q.type === "scale") return typeof v === "number" && v >= (q.min ?? 1)
+    return typeof v === "string" && v.trim().length > 0
+  })
+
+  const setAnswer = (id: string, value: unknown) =>
+    setAnswers((prev) => ({ ...prev, [id]: value }))
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault()
-    if (!isValid) return
-
+    if (!isValid || isSubmitting) return
     setIsSubmitting(true)
+    setError(null)
 
     try {
-      console.log("[v0] testData.variant before submission:", testData.variant)
-      console.log("[v0] Recording enabled:", recordingEnabled)
-      console.log("[v0] Full testData:", testData)
+      // Stop the recorder first so the last chunk lands in storedChunks.
+      if (isRecording) stopRecording()
+      await new Promise((r) => setTimeout(r, 2000))
 
-      let uploadedUrls: string[] = []
-
-      if (recordingEnabled) {
-        console.log("[v0] Stopping recording before submission")
-        stopRecording()
-
-        await new Promise((resolve) => setTimeout(resolve, 2000))
-
-        console.log("[v0] Starting upload of", storedChunks.length, "chunks")
-
-        if (storedChunks.length === 0) {
-          throw new Error("No recording chunks found. Please ensure recording was active during the test.")
-        }
-
-        uploadedUrls = await uploadAllChunks((current, total) => {
-          console.log("[v0] Upload progress:", current, "of", total)
-          setUploadProgress({ current, total })
-        })
-
-        if (uploadedUrls.length === 0) {
-          throw new Error("No chunks were successfully uploaded. Please try again.")
-        }
-
-        console.log("[v0] All chunks uploaded, submitting metadata")
-      } else {
-        console.log("[v0] Recording disabled, skipping upload")
+      let uploaded: string[] = []
+      if (storedChunks.length > 0) {
+        uploaded = await uploadAllChunks((current, total) => setUploadProgress({ current, total }))
       }
 
-      const submissionData = {
-        ...testData,
-        recordingChunks: uploadedUrls,
-        answers,
-        duration: Date.now() - new Date(testData.timestamp).getTime(),
+      const payload = {
+        sessionId,
+        participantName,
+        scenario,
+        totalChunks: uploaded.length,
+        startedAt,
+        events,
+        responses: { primingCheck, ...answers },
       }
-      console.log("[v0] Submission payload:", submissionData)
-      console.log("[v0] Submission payload variant:", submissionData.variant)
-      console.log("[v0] Submission payload recordingEnabled:", submissionData.recordingEnabled)
 
-      const response = await fetch("/api/submit-test", {
+      const res = await fetch("/api/submit-test", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify(submissionData),
+        body: JSON.stringify(payload),
       })
 
-      if (!response.ok) {
-        const errorText = await response.text()
-        console.error("[v0] Submission failed:", response.status, errorText)
-        throw new Error(`Submission failed: ${response.status}`)
+      if (!res.ok) {
+        const text = await res.text()
+        throw new Error(`Submission failed: ${res.status} ${text}`)
       }
 
-      console.log("[v0] Submission successful")
       onSubmit(answers)
-    } catch (error) {
-      console.error("[v0] Submission error:", error)
-      const errorMessage = error instanceof Error ? error.message : "Unknown error occurred"
-      alert(`Failed to submit: ${errorMessage}\n\nPlease try again or contact support if the issue persists.`)
+    } catch (err) {
+      console.error("[questions] Submit error:", err)
+      setError(err instanceof Error ? err.message : "Unknown error")
       setIsSubmitting(false)
       setUploadProgress({ current: 0, total: 0 })
     }
@@ -119,7 +103,7 @@ export function QuestionsStep({
 
   return (
     <div className="max-w-3xl mx-auto">
-      {isRecording && recordingEnabled && (
+      {isRecording && (
         <div className="fixed top-4 left-4 z-50 flex items-center gap-2 bg-red-500/90 text-white px-3 py-1.5 rounded-full text-xs font-medium shadow-lg">
           <div className="w-2 h-2 bg-white rounded-full animate-pulse" />
           Recording Active
@@ -128,74 +112,46 @@ export function QuestionsStep({
 
       <Card>
         <CardHeader>
-          <CardTitle className="text-2xl">Comprehension Questions</CardTitle>
-          <CardDescription>Please answer the following questions about your experience during the test</CardDescription>
+          <CardTitle className="text-2xl">A few quick questions</CardTitle>
+          <CardDescription>
+            Tell us what you noticed during the flow you just went through.
+          </CardDescription>
         </CardHeader>
         <CardContent>
           <form onSubmit={handleSubmit} className="space-y-8">
-            <div className="space-y-2">
-              <Label htmlFor="mainMessage">At what point in the flow did you first notice the yellow alert?</Label>
-              <Textarea
-                id="mainMessage"
-                placeholder="Describe the main message..."
-                value={answers.mainMessage}
-                onChange={(e) => setAnswers({ ...answers, mainMessage: e.target.value })}
-                required
-                rows={3}
+            {visibleQuestions.map((q) => (
+              <QuestionField
+                key={q.id}
+                question={q}
+                value={answers[q.id]}
+                onChange={(v) => setAnswer(q.id, v)}
               />
-            </div>
+            ))}
 
-            <div className="space-y-2">
-              <Label htmlFor="suggestedAction">What action, if any, did the yellow alert suggest you take?</Label>
-              <Textarea
-                id="suggestedAction"
-                placeholder="Describe any suggested actions..."
-                value={answers.suggestedAction}
-                onChange={(e) => setAnswers({ ...answers, suggestedAction: e.target.value })}
-                required
-                rows={3}
-              />
-            </div>
-
-            <div className="space-y-2">
-              <Label htmlFor="additionalFeedback">Additional Feedback (Optional)</Label>
-              <Textarea
-                id="additionalFeedback"
-                placeholder="Any other thoughts or observations..."
-                value={answers.additionalFeedback}
-                onChange={(e) => setAnswers({ ...answers, additionalFeedback: e.target.value })}
-                rows={4}
-              />
-            </div>
-
-            {isSubmitting && recordingEnabled && uploadProgress.total > 0 && (
+            {isSubmitting && uploadProgress.total > 0 && (
               <div className="space-y-2 p-4 bg-muted rounded-lg">
                 <div className="flex items-center justify-between text-sm">
-                  <span className="font-medium">Uploading recordings...</span>
-                  <span className="text-muted-foreground">
-                    {uploadProgress.current} of {uploadProgress.total} chunks
-                  </span>
+                  <span className="font-medium">Uploading X of Y chunks — please don't close this window</span>
+                </div>
+                <div className="text-xs text-muted-foreground">
+                  {uploadProgress.current} of {uploadProgress.total} chunks
                 </div>
                 <Progress value={(uploadProgress.current / uploadProgress.total) * 100} />
-                <p className="text-xs text-muted-foreground">Please don't close this window until upload is complete</p>
               </div>
             )}
 
-            <div className="flex gap-3 pt-4">
-              <Button
-                type="button"
-                variant="outline"
-                onClick={onBack}
-                disabled={isSubmitting}
-                className="flex-1 bg-transparent"
-              >
-                Back
-              </Button>
-              <Button type="submit" disabled={!isValid || isSubmitting} className="flex-1" size="lg">
+            {error && (
+              <div className="p-3 rounded border border-red-200 bg-red-50 text-red-800 text-sm">
+                {error} — please try submitting again.
+              </div>
+            )}
+
+            <div className="pt-2">
+              <Button type="submit" disabled={!isValid || isSubmitting} className="w-full" size="lg">
                 {isSubmitting ? (
                   <>
                     <Loader2 className="w-4 h-4 mr-2 animate-spin" />
-                    {uploadProgress.total > 0 ? "Uploading..." : "Submitting..."}
+                    {uploadProgress.total > 0 ? "Uploading…" : "Submitting…"}
                   </>
                 ) : (
                   "Submit"
@@ -205,6 +161,83 @@ export function QuestionsStep({
           </form>
         </CardContent>
       </Card>
+    </div>
+  )
+}
+
+function QuestionField({
+  question,
+  value,
+  onChange,
+}: {
+  question: Question
+  value: unknown
+  onChange: (v: unknown) => void
+}) {
+  if (question.type === "text") {
+    return (
+      <div className="space-y-2">
+        <Label htmlFor={question.id} className="text-base">
+          {question.label} {!question.required && <span className="text-muted-foreground text-sm">(optional)</span>}
+        </Label>
+        <Input
+          id={question.id}
+          value={typeof value === "string" ? value : ""}
+          onChange={(e) => onChange(e.target.value)}
+          placeholder={question.placeholder}
+          required={question.required}
+        />
+      </div>
+    )
+  }
+
+  if (question.type === "textarea") {
+    return (
+      <div className="space-y-2">
+        <Label htmlFor={question.id} className="text-base">
+          {question.label} {!question.required && <span className="text-muted-foreground text-sm">(optional)</span>}
+        </Label>
+        <Textarea
+          id={question.id}
+          value={typeof value === "string" ? value : ""}
+          onChange={(e) => onChange(e.target.value)}
+          placeholder={question.placeholder}
+          rows={4}
+          required={question.required}
+        />
+      </div>
+    )
+  }
+
+  // scale
+  const min = question.min ?? 1
+  const max = question.max ?? 7
+  const options = Array.from({ length: max - min + 1 }, (_, i) => min + i)
+  const current = typeof value === "number" ? value : null
+  return (
+    <div className="space-y-2">
+      <Label className="text-base">{question.label}</Label>
+      <div className="flex items-center justify-between gap-2">
+        <span className="text-xs text-muted-foreground w-24">{question.minLabel}</span>
+        <div className="flex gap-2 flex-wrap justify-center flex-1">
+          {options.map((n) => (
+            <button
+              key={n}
+              type="button"
+              onClick={() => onChange(n)}
+              className={`w-10 h-10 rounded-full border-2 text-sm font-medium transition-colors ${
+                current === n
+                  ? "border-primary bg-primary text-primary-foreground"
+                  : "border-gray-300 bg-white hover:border-primary/50"
+              }`}
+              aria-label={`${n} of ${max}`}
+            >
+              {n}
+            </button>
+          ))}
+        </div>
+        <span className="text-xs text-muted-foreground w-24 text-right">{question.maxLabel}</span>
+      </div>
     </div>
   )
 }
