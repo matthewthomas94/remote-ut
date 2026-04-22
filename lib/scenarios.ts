@@ -3,7 +3,10 @@
 
 export type Scenario = "s1" | "s2"
 
-export const BOSS_NAME = "Sarah"
+// Boss name matches one of the hardcoded directors on purpose — the
+// participant's boss is a real director of the business, which makes the
+// ownership screen a real decision (invite the boss vs. do something else).
+export const BOSS_NAME = "Matthew"
 export const BUSINESS_NAME = "Northwind Trading"
 
 // Hardcoded director set surfaced by the ABN lookup in the prototype.
@@ -45,7 +48,7 @@ export const SCENARIO_COPY: Record<Scenario, { label: string; body: string }> = 
     body:
       `You work at ${BUSINESS_NAME}. Your boss ${BOSS_NAME}, who is the director, ` +
       `has asked you to sign up for Pay, a business payments platform. ` +
-      `She wants you to let her know once the account has been created and is ready for use.\n\n` +
+      `He wants you to let him know once the account has been created and is ready for use.\n\n` +
       `Go ahead and start the sign-up.`,
   },
 }
@@ -107,7 +110,7 @@ export const COMPREHENSION_QUESTIONS: Question[] = [
   {
     id: "mandateConfidence",
     type: "scale",
-    label: `How confident were you that ${BOSS_NAME} had the authority to ask you to sign up on her behalf?`,
+    label: `How confident were you that ${BOSS_NAME} had the authority to ask you to sign up on his behalf?`,
     min: 1,
     max: 5,
     minLabel: "Not at all",

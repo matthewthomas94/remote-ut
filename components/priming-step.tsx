@@ -7,32 +7,54 @@ import { Textarea } from "@/components/ui/textarea"
 import { Label } from "@/components/ui/label"
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card"
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert"
-import { AlertCircle, Loader2 } from "lucide-react"
+import { AlertCircle, Loader2, Video } from "lucide-react"
 import { PRIMING_CHECK_QUESTION, SCENARIO_COPY, type Scenario } from "@/lib/scenarios"
 
 interface PrimingStepProps {
   scenario: Scenario
   onNext: (primingCheck: string) => Promise<void> | void
+  onRetryRecording: () => Promise<void> | void
   recordingError: string | null
 }
 
-export function PrimingStep({ scenario, onNext, recordingError }: PrimingStepProps) {
+export function PrimingStep({
+  scenario,
+  onNext,
+  onRetryRecording,
+  recordingError,
+}: PrimingStepProps) {
   const [answer, setAnswer] = useState("")
   const [submitting, setSubmitting] = useState(false)
+  const [retrying, setRetrying] = useState(false)
+  // Once the participant has submitted once and been denied, they can't
+  // continue without screen sharing — show a retry-only state instead of
+  // letting them edit and resubmit.
+  const [attempted, setAttempted] = useState(false)
 
   const copy = SCENARIO_COPY[scenario]
-  const canContinue = answer.trim().length > 0 && !submitting
+  const blocked = attempted && !!recordingError
+  const canSubmit = answer.trim().length > 0 && !submitting && !attempted
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault()
-    if (!canContinue) return
+    if (!canSubmit) return
     setSubmitting(true)
+    setAttempted(true)
     try {
       await onNext(answer.trim())
     } finally {
-      // If getDisplayMedia rejected, onNext returns but step stays on 3,
-      // so re-enable the button for a retry.
+      // If recording rejected, stay on this step — the retry button becomes
+      // the only way forward.
       setSubmitting(false)
+    }
+  }
+
+  const handleRetry = async () => {
+    setRetrying(true)
+    try {
+      await onRetryRecording()
+    } finally {
+      setRetrying(false)
     }
   }
 
@@ -63,31 +85,55 @@ export function PrimingStep({ scenario, onNext, recordingError }: PrimingStepPro
                 placeholder="Type your answer here"
                 rows={4}
                 required
+                disabled={attempted}
               />
             </div>
 
-            {recordingError && (
+            {!blocked && (
+              <Button type="submit" disabled={!canSubmit} size="lg" className="w-full">
+                {submitting ? (
+                  <>
+                    <Loader2 className="w-4 h-4 mr-2 animate-spin" />
+                    Starting…
+                  </>
+                ) : (
+                  "Continue — share screen and start"
+                )}
+              </Button>
+            )}
+          </form>
+
+          {blocked && (
+            <div className="space-y-4">
               <Alert variant="destructive">
                 <AlertCircle className="w-4 h-4" />
-                <AlertTitle>Screen sharing required</AlertTitle>
+                <AlertTitle>Screen sharing is required to continue</AlertTitle>
                 <AlertDescription>
-                  {recordingError} When you click Continue, your browser will prompt you again —
-                  please pick this tab.
+                  We couldn't start the recording. You must share your screen to participate —
+                  click the button below to try again and pick this tab in the prompt.
                 </AlertDescription>
               </Alert>
-            )}
-
-            <Button type="submit" disabled={!canContinue} size="lg" className="w-full">
-              {submitting ? (
-                <>
-                  <Loader2 className="w-4 h-4 mr-2 animate-spin" />
-                  Starting…
-                </>
-              ) : (
-                "Continue — share screen and start"
-              )}
-            </Button>
-          </form>
+              <Button
+                type="button"
+                onClick={handleRetry}
+                disabled={retrying}
+                size="lg"
+                className="w-full"
+              >
+                {retrying ? (
+                  <>
+                    <Loader2 className="w-4 h-4 mr-2 animate-spin" />
+                    Requesting permission…
+                  </>
+                ) : (
+                  <>
+                    <Video className="w-4 h-4 mr-2" />
+                    Share your screen to continue
+                  </>
+                )}
+              </Button>
+            </div>
+          )}
         </CardContent>
       </Card>
     </div>

@@ -67,7 +67,20 @@ export default function Home() {
     // prototype. If getDisplayMedia rejects, keep them on the priming step so
     // they can retry — spec: "do not allow progression without recording".
     const started = await startRecording()
-    if (!started) return
+    if (!started) {
+      logEvent("recording_permission_denied")
+      return
+    }
+    setStep(4)
+  }
+
+  const handleRetryRecording = async () => {
+    logEvent("recording_retry_attempt")
+    const started = await startRecording()
+    if (!started) {
+      logEvent("recording_permission_denied")
+      return
+    }
     setStep(4)
   }
 
@@ -109,6 +122,7 @@ export default function Home() {
           <PrimingStep
             scenario={state.scenario}
             onNext={handlePrimingNext}
+            onRetryRecording={handleRetryRecording}
             recordingError={error}
           />
         )}
