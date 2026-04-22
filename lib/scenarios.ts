@@ -77,7 +77,7 @@ export const COMPREHENSION_QUESTIONS: Question[] = [
     label:
       "On the screen that asked you to select an account owner, how easy or difficult was it to decide what to do?",
     min: 1,
-    max: 7,
+    max: 5,
     minLabel: "Very difficult",
     maxLabel: "Very easy",
     required: true,

@@ -444,7 +444,8 @@ export default function PrototypeFlow({
                       ownership: {
                         ...s.ownership,
                         selectedDirector: dir.id,
-                        inviteEmail: dir.inviteEmail,
+                        // Don't prefill — the participant types the real
+                        // email so it's a deliberate action.
                       },
                     }))
                   }
