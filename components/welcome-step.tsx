@@ -8,13 +8,14 @@ import { Label } from "@/components/ui/label"
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card"
 import { Alert, AlertDescription } from "@/components/ui/alert"
 import { AlertCircle, Loader2 } from "lucide-react"
-import type { Scenario } from "@/lib/scenarios"
 
 interface WelcomeStepProps {
-  onNext: (name: string, sessionId: string, scenario: Scenario) => void
+  testId: string
+  testTitle: string
+  onNext: (name: string, sessionId: string) => void
 }
 
-export function WelcomeStep({ onNext }: WelcomeStepProps) {
+export function WelcomeStep({ testId, testTitle, onNext }: WelcomeStepProps) {
   const [name, setName] = useState("")
   const [submitting, setSubmitting] = useState(false)
   const [error, setError] = useState<string | null>(null)
@@ -28,10 +29,14 @@ export function WelcomeStep({ onNext }: WelcomeStepProps) {
     setError(null)
 
     try {
-      const res = await fetch("/api/session", { method: "POST" })
+      const res = await fetch("/api/sessions", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ testId, participantName: trimmed }),
+      })
       if (!res.ok) throw new Error(`Session request failed: ${res.status}`)
-      const data = (await res.json()) as { sessionId: string; scenario: Scenario }
-      onNext(trimmed, data.sessionId, data.scenario)
+      const data = (await res.json()) as { session: { id: string } }
+      onNext(trimmed, data.session.id)
     } catch (err) {
       console.error("[welcome] Failed to create session", err)
       setError("We couldn't start a session. Please check your connection and try again.")
@@ -43,9 +48,9 @@ export function WelcomeStep({ onNext }: WelcomeStepProps) {
     <div className="flex items-center justify-center min-h-[calc(100vh-12rem)]">
       <Card className="w-full max-w-lg">
         <CardHeader className="text-center">
-          <CardTitle className="text-3xl font-bold">User Testing Study</CardTitle>
+          <CardTitle className="text-3xl font-bold">{testTitle}</CardTitle>
           <CardDescription className="text-base mt-2">
-            Welcome! Thank you for participating in our research study.
+            Welcome! Thank you for participating in this research study.
           </CardDescription>
         </CardHeader>
         <CardContent>

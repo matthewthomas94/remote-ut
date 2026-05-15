@@ -8,17 +8,18 @@ import { Label } from "@/components/ui/label"
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card"
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert"
 import { AlertCircle, Loader2, Video } from "lucide-react"
-import { PRIMING_CHECK_QUESTION, SCENARIO_COPY, type Scenario } from "@/lib/scenarios"
 
 interface PrimingStepProps {
-  scenario: Scenario
+  preamble: string
+  primingQuestion: string
   onNext: (primingCheck: string) => Promise<void> | void
   onRetryRecording: () => Promise<void> | void
   recordingError: string | null
 }
 
 export function PrimingStep({
-  scenario,
+  preamble,
+  primingQuestion,
   onNext,
   onRetryRecording,
   recordingError,
@@ -31,7 +32,6 @@ export function PrimingStep({
   // letting them edit and resubmit.
   const [attempted, setAttempted] = useState(false)
 
-  const copy = SCENARIO_COPY[scenario]
   const blocked = attempted && !!recordingError
   const canSubmit = answer.trim().length > 0 && !submitting && !attempted
 
@@ -43,8 +43,6 @@ export function PrimingStep({
     try {
       await onNext(answer.trim())
     } finally {
-      // If recording rejected, stay on this step — the retry button becomes
-      // the only way forward.
       setSubmitting(false)
     }
   }
@@ -70,13 +68,13 @@ export function PrimingStep({
         </CardHeader>
         <CardContent className="space-y-6">
           <div className="rounded-lg border border-border bg-muted/40 p-5 text-[15px] leading-relaxed whitespace-pre-line">
-            {copy.body}
+            {preamble}
           </div>
 
           <form onSubmit={handleSubmit} className="space-y-5">
             <div className="space-y-2">
               <Label htmlFor="primingCheck" className="text-base">
-                {PRIMING_CHECK_QUESTION}
+                {primingQuestion}
               </Label>
               <Textarea
                 id="primingCheck"

@@ -1,6 +1,6 @@
-import { put } from "@vercel/blob"
 import { type NextRequest, NextResponse } from "next/server"
 import { z } from "zod"
+import { getSession, saveSession } from "@/lib/storage"
 
 const EventSchema = z.object({
   type: z.string(),
@@ -10,13 +10,13 @@ const EventSchema = z.object({
 
 const SubmissionSchema = z.object({
   sessionId: z.string().uuid(),
-  participantName: z.string().min(1),
-  scenario: z.enum(["s1", "s2"]),
   totalChunks: z.number().int().nonnegative(),
-  startedAt: z.string(),
+  chunkUrls: z.array(z.string().url()).optional(),
+  primingCheck: z.string().optional(),
+  endTerminal: z.string().max(64).optional(),
   events: z.array(EventSchema),
   // responses is intentionally loose — the comprehension question set is
-  // configurable and we want new keys to persist without a schema bump.
+  // configurable per-test and we want new keys to persist without a schema bump.
   responses: z.record(z.string(), z.unknown()),
 })
 
@@ -24,7 +24,6 @@ export async function POST(request: NextRequest) {
   try {
     const raw = await request.json()
     const parsed = SubmissionSchema.safeParse(raw)
-
     if (!parsed.success) {
       return NextResponse.json(
         { error: "Invalid submission payload", issues: parsed.error.issues },
@@ -32,41 +31,34 @@ export async function POST(request: NextRequest) {
       )
     }
 
-    const data = parsed.data
+    const existing = await getSession(parsed.data.sessionId)
+    if (!existing) {
+      return NextResponse.json({ error: "Session not found" }, { status: 404 })
+    }
+
     const submittedAt = new Date().toISOString()
     const durationSeconds = Math.max(
       0,
-      Math.round((new Date(submittedAt).getTime() - new Date(data.startedAt).getTime()) / 1000),
+      Math.round(
+        (new Date(submittedAt).getTime() - new Date(existing.startedAt).getTime()) / 1000,
+      ),
     )
 
-    const metadata = {
-      sessionId: data.sessionId,
-      participantName: data.participantName,
-      scenario: data.scenario,
-      totalChunks: data.totalChunks,
-      startedAt: data.startedAt,
+    const updated = {
+      ...existing,
+      status: "completed" as const,
       submittedAt,
       durationSeconds,
-      events: data.events,
-      responses: data.responses,
+      totalChunks: parsed.data.totalChunks,
+      chunkUrls: parsed.data.chunkUrls,
+      primingCheck: parsed.data.primingCheck,
+      endTerminal: parsed.data.endTerminal ?? existing.endTerminal,
+      events: parsed.data.events,
+      responses: parsed.data.responses,
     }
 
-    // Filename omits participantName — chunks/metadata live in shared Blob
-    // and names are PII. SessionId is the only join key.
-    if (!process.env.BLOB_READ_WRITE_TOKEN) {
-      // Local dev without blob configured: log the metadata and succeed so
-      // the flow can still be walked end-to-end.
-      console.log("[submit-test] Blob not configured — metadata would have been:", metadata)
-      return NextResponse.json({ success: true, metadataUrl: null, localOnly: true })
-    }
-
-    const blob = await put(
-      `${data.sessionId}_metadata.json`,
-      JSON.stringify(metadata, null, 2),
-      { access: "public", contentType: "application/json" },
-    )
-
-    return NextResponse.json({ success: true, metadataUrl: blob.url })
+    await saveSession(updated)
+    return NextResponse.json({ success: true })
   } catch (error) {
     console.error("[submit-test] Error:", error)
     return NextResponse.json({ error: "Submission failed" }, { status: 500 })

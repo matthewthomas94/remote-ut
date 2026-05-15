@@ -9,15 +9,13 @@ import { Input } from "@/components/ui/input"
 import { Textarea } from "@/components/ui/textarea"
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card"
 import { Progress } from "@/components/ui/progress"
-import { COMPREHENSION_QUESTIONS, type Scenario, type Question } from "@/lib/scenarios"
-import type { LogEvent } from "@/app/page"
+import type { LogEvent, Question } from "@/lib/types"
 
 interface QuestionsStepProps {
   sessionId: string
-  participantName: string
-  scenario: Scenario
+  questions: Question[]
   primingCheck: string
-  startedAt: string
+  endTerminal?: string
   events: LogEvent[]
   isRecording: boolean
   stopRecording: () => Promise<Blob[]>
@@ -28,10 +26,9 @@ interface QuestionsStepProps {
 
 export function QuestionsStep({
   sessionId,
-  participantName,
-  scenario,
+  questions,
   primingCheck,
-  startedAt,
+  endTerminal,
   events,
   isRecording,
   stopRecording,
@@ -39,13 +36,12 @@ export function QuestionsStep({
   storedChunks,
   onSubmit,
 }: QuestionsStepProps) {
-  const visibleQuestions = COMPREHENSION_QUESTIONS.filter((q) => !q.showIf || q.showIf(scenario))
   const [answers, setAnswers] = useState<Record<string, unknown>>({})
   const [isSubmitting, setIsSubmitting] = useState(false)
   const [uploadProgress, setUploadProgress] = useState({ current: 0, total: 0 })
   const [error, setError] = useState<string | null>(null)
 
-  const isValid = visibleQuestions.every((q) => {
+  const isValid = questions.every((q) => {
     if (!q.required) return true
     const v = answers[q.id]
     if (q.type === "scale") return typeof v === "number" && v >= (q.min ?? 1)
@@ -62,26 +58,25 @@ export function QuestionsStep({
     setError(null)
 
     try {
-      // Await stopRecording so the final chunk has been flushed into the
-      // hook's internal allChunks buffer before we upload. The React state
-      // `storedChunks` won't update mid-handler, so we rely on the returned
-      // chunk list here instead.
+      // Await stopRecording so the final chunk is flushed before upload —
+      // React state `storedChunks` doesn't update mid-handler.
       const chunks = isRecording ? await stopRecording() : storedChunks
-      console.log("[questions] Chunks ready to upload:", chunks.length)
 
       let uploaded: string[] = []
       if (chunks.length > 0) {
-        uploaded = await uploadAllChunks((current, total) => setUploadProgress({ current, total }))
+        uploaded = await uploadAllChunks((current, total) =>
+          setUploadProgress({ current, total }),
+        )
       }
 
       const payload = {
         sessionId,
-        participantName,
-        scenario,
         totalChunks: uploaded.length,
-        startedAt,
+        chunkUrls: uploaded,
+        primingCheck,
+        endTerminal,
         events,
-        responses: { primingCheck, ...answers },
+        responses: answers,
       }
 
       const res = await fetch("/api/submit-test", {
@@ -122,7 +117,7 @@ export function QuestionsStep({
         </CardHeader>
         <CardContent>
           <form onSubmit={handleSubmit} className="space-y-8">
-            {visibleQuestions.map((q) => (
+            {questions.map((q) => (
               <QuestionField
                 key={q.id}
                 question={q}
@@ -134,7 +129,9 @@ export function QuestionsStep({
             {isSubmitting && uploadProgress.total > 0 && (
               <div className="space-y-2 p-4 bg-muted rounded-lg">
                 <div className="flex items-center justify-between text-sm">
-                  <span className="font-medium">Uploading X of Y chunks — please don't close this window</span>
+                  <span className="font-medium">
+                    Uploading recording — please don't close this window
+                  </span>
                 </div>
                 <div className="text-xs text-muted-foreground">
                   {uploadProgress.current} of {uploadProgress.total} chunks
@@ -181,7 +178,10 @@ function QuestionField({
     return (
       <div className="space-y-2">
         <Label htmlFor={question.id} className="text-base">
-          {question.label} {!question.required && <span className="text-muted-foreground text-sm">(optional)</span>}
+          {question.label}{" "}
+          {!question.required && (
+            <span className="text-muted-foreground text-sm">(optional)</span>
+          )}
         </Label>
         <Input
           id={question.id}
@@ -198,7 +198,10 @@ function QuestionField({
     return (
       <div className="space-y-2">
         <Label htmlFor={question.id} className="text-base">
-          {question.label} {!question.required && <span className="text-muted-foreground text-sm">(optional)</span>}
+          {question.label}{" "}
+          {!question.required && (
+            <span className="text-muted-foreground text-sm">(optional)</span>
+          )}
         </Label>
         <Textarea
           id={question.id}
@@ -214,7 +217,7 @@ function QuestionField({
 
   // scale
   const min = question.min ?? 1
-  const max = question.max ?? 7
+  const max = question.max ?? 5
   const options = Array.from({ length: max - min + 1 }, (_, i) => min + i)
   const current = typeof value === "number" ? value : null
   return (
