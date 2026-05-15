@@ -33,7 +33,7 @@ export function SessionsTable({ sessions }: SessionsTableProps) {
           <tr>
             <th className="px-4 py-2 text-left font-medium">Participant</th>
             <th className="px-4 py-2 text-left font-medium">Status</th>
-            <th className="px-4 py-2 text-left font-medium">Ended at</th>
+            <th className="px-4 py-2 text-left font-medium">Terminal</th>
             <th className="px-4 py-2 text-left font-medium">Duration</th>
             <th className="px-4 py-2 text-left font-medium">Started</th>
             <th className="px-4 py-2" />

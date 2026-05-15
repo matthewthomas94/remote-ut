@@ -107,7 +107,7 @@ export function SessionDetailView({ session, test }: SessionDetailViewProps) {
         </AlertDialog>
       </div>
 
-      <div className="grid grid-cols-2 md:grid-cols-5 gap-3 text-sm">
+      <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-6 gap-3 text-sm">
         <Card>
           <CardContent className="pt-4">
             <div className="text-xs text-muted-foreground">Status</div>
@@ -116,7 +116,7 @@ export function SessionDetailView({ session, test }: SessionDetailViewProps) {
         </Card>
         <Card>
           <CardContent className="pt-4">
-            <div className="text-xs text-muted-foreground">Ended at</div>
+            <div className="text-xs text-muted-foreground">Terminal</div>
             <div className="font-medium mt-0.5 font-mono text-xs">
               {session.endTerminal ?? <span className="text-muted-foreground">—</span>}
             </div>
@@ -138,6 +138,18 @@ export function SessionDetailView({ session, test }: SessionDetailViewProps) {
           <CardContent className="pt-4">
             <div className="text-xs text-muted-foreground">Started</div>
             <div className="font-medium mt-0.5">{new Date(session.startedAt).toLocaleString()}</div>
+          </CardContent>
+        </Card>
+        <Card>
+          <CardContent className="pt-4">
+            <div className="text-xs text-muted-foreground">Ended</div>
+            <div className="font-medium mt-0.5">
+              {session.submittedAt ? (
+                new Date(session.submittedAt).toLocaleString()
+              ) : (
+                <span className="text-muted-foreground">—</span>
+              )}
+            </div>
           </CardContent>
         </Card>
       </div>
